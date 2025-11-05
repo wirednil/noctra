@@ -1,0 +1,172 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test Suite
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        rust: [stable, beta]
+        
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - uses: actions/checkout@v4
+      
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
+        components: rustfmt, clippy
+        
+    - name: Cache cargo registry
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Cache cargo index
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Cache cargo build
+      uses: actions/cache@v3
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.toml') }}
+        
+    - name: Install system dependencies (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libncurses5-dev libncursesw5-dev
+        
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+      
+    - name: Lint with clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
+      
+    - name: Test without features
+      run: cargo test --workspace --lib
+      
+    - name: Test with SQLite
+      run: cargo test --workspace --lib --features sqlite
+      
+    - name: Run doc tests
+      run: cargo test --workspace --doc
+      
+    - name: Build release
+      run: cargo build --workspace --release
+      
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      
+    - name: Install system dependencies
+      run: sudo apt-get install -y libncurses5-dev libncursesw5-dev
+      
+    - name: Generate documentation
+      run: cargo doc --workspace --no-deps
+      
+    - name: Deploy documentation (main branch only)
+      if: github.ref == 'refs/heads/main'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./target/doc
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+    
+    - name: Install tarpaulin
+      run: |
+        cargo install cargo-tarpaulin
+        sudo apt-get update
+        sudo apt-get install -y libncurses5-dev libncursesw5-dev
+        
+    - name: Run coverage
+      run: |
+        cargo tarpaulin --workspace --out xml --output-dir coverage
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage/cobertura.xml
+        fail_ci_if_error: true
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      
+    - name: Audit dependencies
+      run: cargo audit --db $(pwd)/advisory-db
+      
+    - name: Check for dangerous code
+      run: cargo deny check
+
+  binary-size:
+    name: Binary Size Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      
+    - name: Build release binaries
+      run: cargo build --workspace --release
+      
+    - name: Analyze binary sizes
+      run: |
+        du -sh target/release/noctra
+        du -sh target/release/noctrad
+        
+    - name: Upload binary artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: noctra-binaries-${{ github.sha }}
+        path: |
+          target/release/noctra
+          target/release/noctrad
+        retention-days: 7
+
+  deny:
+    name: Cargo Deny
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install cargo-deny
+      run: cargo install --locked cargo-deny
+      
+    - name: Run cargo deny check
+      run: cargo deny check

@@ -1,0 +1,61 @@
+[package]
+name = "noctra-srv"
+version = "0.1.0"
+edition = "2021"
+description = "Daemon server for Noctra (noctrad)"
+license = "MIT OR Apache-2.0"
+authors = ["Claude Code <claude@anthropic.com>"]
+# Local project - repository = "local"
+
+[dependencies]
+# Core dependencies
+noctra-core = { path = "../core" }
+noctra-parser = { path = "../parser" }
+noctra-formlib = { path = "../formlib" }
+
+# Web framework
+axum = { version = "0.7", features = ["json", "query"] }
+tower = { version = "0.4", features = ["util", "timeout"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json"] }
+
+# Async runtime
+tokio = { workspace = true, features = ["full"] }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+log = { workspace = true }
+env_logger = { workspace = true }
+
+# Security
+jsonwebtoken = { version = "9.0", optional = true }
+bcrypt = { version = "0.15", optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio-test = { workspace = true }
+
+[[bin]]
+name = "noctrad"
+path = "src/main.rs"
+
+[lib]
+name = "noctra_srv"
+crate-type = ["cdylib"]
+
+[features]
+default = []
+auth = ["jsonwebtoken", "bcrypt"]
+
+[package.metadata.docs.rs]
+all-features = true

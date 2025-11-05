@@ -1,0 +1,99 @@
+# Configuración de Desarrollo - Noctra Server
+
+[server]
+# Binding configuration (local development)
+bind_address = "127.0.0.1:8081"
+
+# Database configuration (temporary dev database)
+database_url = "sqlite:dev_noctra.db"
+database_path = "./tmp/dev_noctra.db"
+
+# Extended timeouts for debugging
+request_timeout = 60
+query_timeout = 120
+
+# Relaxed connection limits
+max_connections = 50
+
+# Simplified auth for development
+auth_secret = "dev-secret-key"
+
+# Development-friendly settings
+cors_enabled = true
+websocket_enabled = true
+
+# Development features
+dev_mode = true
+metrics_enabled = true
+rate_limiting_enabled = false  # Disabled for easier testing
+
+# Development file paths
+forms_directory = "./examples/forms"
+token_file = "./examples/dev_token"
+
+[performance]
+# More aggressive caching for development
+enable_query_cache = true
+query_cache_size = 500
+query_cache_ttl = 60  # Shorter TTL for development
+
+# Smaller connection pool for development
+enable_connection_pool = true
+connection_pool_min = 1
+connection_pool_max = 5
+
+# No rate limiting in development
+rate_limiting_enabled = false
+
+# Metadata cache with shorter TTL
+enable_metadata_cache = true
+metadata_cache_ttl = 60
+
+[logging]
+# Verbose logging for development
+level = "debug"
+
+# Human-readable format
+format = "pretty"
+
+# File logging enabled but with rotation
+file_logging = true
+log_file = "./tmp/noctra_dev.log"
+log_max_size = 5  # MB
+log_max_files = 3
+
+# Also log to stdout
+console_logging = true
+
+[features]
+# Enable all development features
+experimental_apis = true
+
+# Enable file upload for testing
+file_upload = true
+max_upload_size = 100  # MB
+
+# Enable admin endpoints for debugging
+admin_endpoints = true
+
+# Enable debug endpoints
+debug_endpoints = true
+
+[database]
+# Development-specific database settings
+pragma_wal_mode = true
+pragma_synchronous = "NORMAL"
+pragma_cache_size = 1000
+pragma_temp_store = "MEMORY"
+
+[web]
+# Enable CORS for frontend development
+cors_origins = [
+    "http://localhost:3000",
+    "http://localhost:8080",
+    "http://127.0.0.1:3000"
+]
+
+# WebSocket settings
+websocket_ping_interval = 30
+websocket_ping_timeout = 5

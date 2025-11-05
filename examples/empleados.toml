@@ -1,0 +1,522 @@
+# Formulario de Consulta de Empleados - Ejemplo FDL2
+# Este es un ejemplo completo del lenguaje FDL2 de Noctra
+
+title = "Consulta de Empleados"
+schema = "payroll"
+
+# ===========================================
+# DEFINICIÓN DE CAMPOS
+# ===========================================
+
+[fields.nroleg]
+label = "Nro. Legajo"
+field_type = "integer"
+required = false
+width = 10
+validations = [
+    { type = "min", value = 1 },
+    { type = "max", value = 99999 }
+]
+
+[fields.nombre]
+label = "Nombre"
+field_type = "text"
+required = false
+width = 40
+validations = [
+    { type = "min_length", value = 2 },
+    { type = "max_length", value = 100 }
+]
+
+[fields.dept]
+label = "Departamento"
+field_type = "enum"
+required = false
+options = ["VENTAS", "MARKETING", "RRHH", "IT", "FINANZAS", "OPERACIONES"]
+
+[fields.cargo]
+label = "Cargo"
+field_type = "text"
+required = false
+width = 30
+
+[fields.salario_desde]
+label = "Salario Desde"
+field_type = "float"
+required = false
+width = 15
+validations = [
+    { type = "min", value = 0 },
+    { type = "max", value = 999999.99 }
+]
+
+[fields.salario_hasta]
+label = "Salario Hasta"
+field_type = "float"
+required = false
+width = 15
+validations = [
+    { type = "min", value = 0 },
+    { type = "max", value = 999999.99 }
+]
+
+[fields.fecha_desde]
+label = "Fecha Ingreso Desde"
+field_type = "date"
+required = false
+
+[fields.fecha_hasta]
+label = "Fecha Ingreso Hasta"
+field_type = "date"
+required = false
+
+[fields.activo]
+label = "Solo Empleados Activos"
+field_type = "boolean"
+required = false
+default = true
+
+# ===========================================
+# ACCIONES
+# ===========================================
+
+[actions.consultar]
+# Acción principal de consulta con template SQL condicional
+sql = """
+SELECT 
+    nroleg,
+    nombre,
+    dept,
+    cargo,
+    salario,
+    fecha_ingreso,
+    case 
+        when activo = 1 then 'ACTIVO'
+        else 'INACTIVO'
+    end as estado
+FROM employees 
+WHERE 1=1
+{{#if nroleg}} AND nroleg = :nroleg {{/if}}
+{{#if nombre}} AND nombre LIKE '%' || :nombre || '%' {{/if}}
+{{#if dept}} AND dept = :dept {{/if}}
+{{#if cargo}} AND cargo LIKE '%' || :cargo || '%' {{/if}}
+{{#if salario_desde}} AND salario >= :salario_desde {{/if}}
+{{#if salario_hasta}} AND salario <= :salario_hasta {{/if}}
+{{#if fecha_desde}} AND fecha_ingreso >= :fecha_desde {{/if}}
+{{#if fecha_hasta}} AND fecha_ingreso <= :fecha_hasta {{/if}}
+{{#if activo}} AND activo = 1 {{/if}}
+ORDER BY 
+{{#if sort_by}}
+    {{sort_by}}
+{{else}}
+    nombre
+{{/if}}
+{{#if sort_order}} {{sort_order}} {{else}} ASC {{/if}};
+"""
+params = ["nroleg", "nombre", "dept", "cargo", "salario_desde", "salario_hasta", "fecha_desde", "fecha_hasta", "activo"]
+on_success = "mostrar_resultados"
+on_error = "mostrar_error"
+
+[actions.estadisticas]
+# Acción secundaria para mostrar estadísticas
+sql = """
+SELECT 
+    dept,
+    COUNT(*) as cantidad_empleados,
+    AVG(salario) as salario_promedio,
+    MIN(salario) as salario_minimo,
+    MAX(salario) as salario_maximo,
+    SUM(CASE WHEN activo = 1 THEN 1 ELSE 0 END) as activos,
+    SUM(CASE WHEN activo = 0 THEN 1 ELSE 0 END) as inactivos
+FROM employees 
+WHERE 1=1
+{{#if dept}} AND dept = :dept {{/if}}
+{{#if fecha_desde}} AND fecha_ingreso >= :fecha_desde {{/if}}
+{{#if fecha_hasta}} AND fecha_ingreso <= :fecha_hasta {{/if}}
+GROUP BY dept
+ORDER BY cantidad_empleados DESC;
+"""
+params = ["dept", "fecha_desde", "fecha_hasta"]
+on_success = "mostrar_estadisticas"
+
+# ===========================================
+# VALIDACIONES
+# ===========================================
+
+[validations]
+# Validación: salario_hasta >= salario_desde
+[[validations.rules]]
+field = "salario_hasta"
+when = "salario_desde"
+condition = "gte"
+action = "require"
+
+# Validación: fecha_hasta >= fecha_desde
+[[validations.rules]]
+field = "fecha_hasta"
+when = "fecha_desde"
+condition = "gte"
+action = "require"
+
+# Validación personalizada (estructura para futura implementación)
+[[validations.custom]]
+name = "validar_rango_salario"
+script = """
+if (salario_desde && salario_hasta && salario_hasta < salario_desde) {
+    return { 
+        valid: false, 
+        message: "El salario hasta debe ser mayor o igual al salario desde" 
+    };
+}
+return { valid: true };
+"""
+
+# ===========================================
+# VISTAS DE RESULTADO
+# ===========================================
+
+[views.mostrar_resultados]
+# Vista principal de resultados en tabla
+type = "table"
+title = "Resultados de Consulta de Empleados"
+pager = true
+max_rows = 50
+columns = ["nroleg", "nombre", "dept", "cargo", "salario", "fecha_ingreso", "estado"]
+
+# Configuración de columnas
+[views.mostrar_resultados.columns.nroleg]
+width = 10
+align = "right"
+header = "Nro.Leg"
+
+[views.mostrar_resultados.columns.nombre]
+width = 30
+align = "left"
+header = "Nombre"
+
+[views.mostrar_resultados.columns.dept]
+width = 15
+align = "center"
+header = "Departamento"
+
+[views.mostrar_resultados.columns.cargo]
+width = 25
+align = "left"
+header = "Cargo"
+
+[views.mostrar_resultados.columns.salario]
+width = 12
+align = "right"
+header = "Salario"
+format = "currency"
+
+[views.mostrar_resultados.columns.fecha_ingreso]
+width = 15
+align = "center"
+header = "Fec.Ingreso"
+format = "date"
+
+[views.mostrar_resultados.columns.estado]
+width = 10
+align = "center"
+header = "Estado"
+
+[views.mostrar_estadisticas]
+# Vista de estadísticas agrupadas
+type = "table"
+title = "Estadísticas por Departamento"
+pager = true
+columns = ["dept", "cantidad_empleados", "salario_promedio", "salario_minimo", "salario_maximo", "activos", "inactivos"]
+
+[views.mostrar_estadisticas.columns.dept]
+width = 15
+header = "Departamento"
+
+[views.mostrar_estadisticas.columns.cantidad_empleados]
+width = 15
+header = "Cantidad"
+format = "integer"
+
+[views.mostrar_estadisticas.columns.salario_promedio]
+width = 15
+header = "Promedio"
+format = "currency"
+
+[views.mostrar_estadisticas.columns.salario_minimo]
+width = 15
+header = "Mínimo"
+format = "currency"
+
+[views.mostrar_estadisticas.columns.salario_maximo]
+width = 15
+header = "Máximo"
+format = "currency"
+
+[views.mostrar_estadisticas.columns.activos]
+width = 10
+header = "Activos"
+format = "integer"
+
+[views.mostrar_estadisticas.columns.inactivos]
+width = 10
+header = "Inactivos"
+format = "integer"
+
+# ===========================================
+# MANEJADORES DE ERROR
+# ===========================================
+
+[error_handlers.mostrar_error]
+# Modal de error genérico
+type = "modal"
+title = "Error en Consulta"
+message_format = "Error al ejecutar la consulta: {error}"
+style = "error"
+actions = ["Reintentar", "Cancelar"]
+
+[error_handlers.error_sintaxis]
+# Modal específico para errores de sintaxis
+type = "modal"
+title = "Error de Sintaxis"
+message_format = "Error en la sintaxis del formulario. Verifique los campos marcados."
+style = "warning"
+actions = ["Corregir"]
+
+[error_handlers.error_conexion]
+# Modal para errores de conexión a BD
+type = "modal"
+title = "Error de Conexión"
+message_format = "No se pudo conectar a la base de datos. Verifique la configuración."
+style = "error"
+actions = ["Reintentar", "Configurar", "Cancelar"]
+
+# ===========================================
+# LAYOUT DEL FORMULARIO
+# ===========================================
+
+[layout]
+columns = 2
+spacing = 2
+width = 80
+
+# Agrupación de campos en secciones
+[layout.sections]
+[[layout.sections]]
+title = "Identificación"
+fields = ["nroleg", "nombre"]
+
+[[layout.sections]]
+title = "Departamento y Cargo"
+fields = ["dept", "cargo"]
+
+[[layout.sections]]
+title = "Rango Salarial"
+fields = ["salario_desde", "salario_hasta"]
+
+[[layout.sections]]
+title = "Rango de Fechas"
+fields = ["fecha_desde", "fecha_hasta"]
+
+[[layout.sections]]
+title = "Filtros Adicionales"
+fields = ["activo"]
+
+# ===========================================
+# CONFIGURACIÓN DE ESTILO
+# ===========================================
+
+[styling]
+theme = "classic"
+colors = { 
+    primary = "#0066cc",
+    secondary = "#666666",
+    error = "#cc0000",
+    success = "#00cc00",
+    warning = "#ff8800"
+}
+
+[styling.fields]
+[styling.fields.text]
+border = "single"
+padding = 1
+
+[styling.fields.integer]
+border = "single"
+padding = 1
+align = "right"
+
+[styling.fields.float]
+border = "single"
+padding = 1
+align = "right"
+format = "currency"
+
+[styling.fields.date]
+border = "single"
+padding = 1
+align = "center"
+format = "DD/MM/YYYY"
+
+[styling.fields.enum]
+border = "single"
+padding = 1
+arrow = "▼"
+
+[styling.fields.boolean]
+border = "single"
+padding = 1
+
+# ===========================================
+# ACCIONES PREDEFINIDAS DEL FORMULARIO
+# ===========================================
+
+[actions.consultar]
+# Esta acción ya fue definida arriba
+# Aquí se pueden agregar más configuraciones
+
+[actions.cancelar]
+# Acción de cancelar formulario
+type = "cancel"
+redirect = "/menu_principal"
+message = "¿Está seguro que desea cancelar la consulta?"
+
+[actions.limpiar]
+# Acción para limpiar todos los campos
+type = "reset"
+target = "all_fields"
+
+[actions.exportar_csv]
+# Acción para exportar resultados a CSV
+type = "export"
+format = "csv"
+filename = "empleados_{timestamp}.csv"
+
+[actions.exportar_excel]
+# Acción para exportar a Excel (futuro)
+type = "export"
+format = "xlsx"
+filename = "empleados_{timestamp}.xlsx"
+
+# ===========================================
+# CONFIGURACIÓN DE INTERNATIONALIZATION
+# ===========================================
+
+[i18n]
+default_locale = "es"
+fallback = "en"
+
+[i18n.translations]
+[i18n.translations.en]
+"Consultar" = "Query"
+"Cancelar" = "Cancel"
+"Limpiar" = "Clear"
+"Departamento" = "Department"
+"Nombre" = "Name"
+
+[i18n.translations.fr]
+"Consultar" = "Requête"
+"Cancelar" = "Annuler"
+"Limpiar" = "Effacer"
+"Departamento" = "Département"
+"Nombre" = "Nom"
+
+# ===========================================
+# CONFIGURACIÓN DE ORDENAMIENTO
+# ===========================================
+
+[sorting]
+default_field = "nombre"
+default_order = "ASC"
+allowed_fields = ["nroleg", "nombre", "dept", "cargo", "salario", "fecha_ingreso"]
+
+# ===========================================
+# CONFIGURACIÓN DE PAGINACIÓN
+# ===========================================
+
+[pagination]
+default_page_size = 25
+max_page_size = 100
+page_size_options = [10, 25, 50, 100]
+
+# ===========================================
+# HOOKS Y CALLBACKS
+# ===========================================
+
+[hooks]
+# Hooks para eventos del formulario
+[hooks.on_load]
+# Se ejecuta al cargar el formulario
+script = """
+// Configurar valores por defecto
+set_field_value('activo', true);
+set_field_value('fecha_hasta', current_date());
+"""
+
+[hooks.on_submit]
+# Se ejecuta antes de enviar el formulario
+script = """
+// Validaciones adicionales antes del submit
+if (salario_desde && salario_hasta && salario_hasta < salario_desde) {
+    show_error('El salario hasta debe ser mayor o igual al salario desde');
+    return false;
+}
+return true;
+"""
+
+[hooks.on_success]
+# Se ejecuta después de una consulta exitosa
+script = """
+// Mostrar mensaje de éxito
+show_message('Consulta ejecutada exitosamente. ' + result_count + ' registros encontrados.');
+"""
+
+# ===========================================
+# CONFIGURACIÓN DE BÚSQUEDA
+# ===========================================
+
+[search]
+# Configuración para búsquedas avanzadas
+[search.indexes]
+# Índices de búsqueda para mejorar performance
+nroleg = { type = "exact", table = "employees", column = "nroleg" }
+nombre = { type = "like", table = "employees", column = "nombre" }
+dept = { type = "exact", table = "employees", column = "dept" }
+
+[search.suggestions]
+# Sugerencias automáticas basadas en datos existentes
+dept = "SELECT DISTINCT dept FROM employees WHERE dept LIKE '%' || :term || '%' ORDER BY dept"
+cargo = "SELECT DISTINCT cargo FROM employees WHERE cargo LIKE '%' || :term || '%' ORDER BY cargo"
+
+# ===========================================
+# EJEMPLO DE USO EN NOCTRA
+# ===========================================
+
+# Para usar este formulario en Noctra:
+# 1. Coloca este archivo en el directorio de formularios
+# 2. Ejecuta en el CLI: form load 'empleados.toml'
+# 3. La interfaz TUI mostrará el formulario
+# 4. Llena los campos deseados y presiona F5
+# 5. Los resultados aparecerán en formato tabla
+
+# Comandos alternativos:
+# EXECFORM 'empleados.toml' WITH params=(dept='IT', activo=true)
+# FORM LOAD 'empleados.toml' WITH estadisticas=true
+
+# ===========================================
+# METADATOS
+# ===========================================
+
+[metadata]
+version = "1.0"
+author = "Noctra Team"
+created = "2025-11-04"
+description = "Formulario completo de consulta de empleados con validaciones, templates y múltiples vistas"
+tags = ["empleados", "consulta", "recursos_humanos", "ejemplo"]
+
+[metadata.documentation]
+usage = "https://docs.noctra.io/examples/empleados"
+api = "https://docs.noctra.io/api/formlib"
+
+[metadata.compatibility]
+min_noctra_version = "0.1.0"
+supported_backends = ["sqlite", "postgres"]

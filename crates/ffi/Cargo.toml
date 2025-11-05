@@ -1,0 +1,29 @@
+[package]
+name = "noctra-ffi"
+version = "0.1.0"
+edition = "2021"
+description = "C FFI bindings for Noctra"
+license = "MIT OR Apache-2.0"
+authors = ["Claude Code <claude@anthropic.com>"]
+# Local project - repository = "local"
+
+[dependencies]
+# Core dependencies
+noctra-core = { path = "../core" }
+noctra-parser = { path = "../parser" }
+
+# C FFI
+libc = "0.2"
+
+# Serialization
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+[lib]
+name = "noctra_ffi"
+crate-type = ["cdylib", "rlib"]
+
+[package.metadata.docs.rs]
+all-features = true

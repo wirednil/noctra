@@ -1,0 +1,47 @@
+[package]
+name = "noctra-formlib"
+version = "0.1.0"
+edition = "2021"
+description = "Form Definition Language library for Noctra"
+license = "MIT OR Apache-2.0"
+authors = ["Claude Code <claude@anthropic.com>"]
+# Local project - repository = "local"
+
+[dependencies]
+# Core dependencies
+noctra-core = { path = "../core" }
+
+# Serialization
+toml = { version = "0.8", features = ["parse", "display"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+serde_with = { version = "3.0", features = ["json"] }
+
+# Text processing
+handlebars = "4.0"
+regex = "1.0"
+validator = { version = "0.16", features = ["derive"] }
+
+# Date/time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Async runtime
+tokio = { workspace = true, features = ["full"] }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# File handling
+walkdir = "2.0"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio-test = { workspace = true }
+
+[lib]
+name = "noctra_formlib"
+crate-type = ["cdylib", "rlib"]
+
+[package.metadata.docs.rs]
+all-features = true

@@ -1,0 +1,79 @@
+# Configuración de Producción - Noctra Server
+
+[server]
+# Binding configuration
+bind_address = "0.0.0.0:8080"
+
+# Database configuration
+database_url = "sqlite:noctra.db"
+database_path = "./data/noctra.db"
+
+# Timeout configuration
+request_timeout = 30
+query_timeout = 60
+
+# Connection limits
+max_connections = 100
+
+# Authentication
+auth_secret = "your-secret-key-here"
+
+# Security settings
+cors_enabled = false
+websocket_enabled = true
+
+# Feature toggles
+dev_mode = false
+metrics_enabled = true
+rate_limiting_enabled = true
+
+# File paths
+forms_directory = "./forms"
+token_file = "./config/token"
+
+[performance]
+# Query cache settings
+enable_query_cache = true
+query_cache_size = 1000
+query_cache_ttl = 300
+
+# Connection pool settings
+enable_connection_pool = true
+connection_pool_min = 2
+connection_pool_max = 20
+
+# Rate limiting
+rate_limit_tokens = 100
+rate_limit_refill = 10
+rate_limit_interval = 60
+
+# Metadata cache
+enable_metadata_cache = true
+metadata_cache_ttl = 1800
+
+[logging]
+# Log level: trace, debug, info, warn, error
+level = "info"
+
+# Log format: json, pretty
+format = "json"
+
+# File logging
+file_logging = true
+log_file = "./logs/noctra.log"
+log_max_size = 10  # MB
+log_max_files = 5
+
+[features]
+# Enable experimental features
+experimental_apis = false
+
+# Enable file upload
+file_upload = false
+max_upload_size = 50  # MB
+
+# Enable admin endpoints
+admin_endpoints = false
+
+# Enable debug endpoints
+debug_endpoints = false

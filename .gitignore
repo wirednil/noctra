@@ -1,0 +1,71 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Data
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary
+/tmp/
+temp/
+
+# Coverage
+coverage/
+*.profraw
+*.gcda
+*.gcno
+
+# Documentation
+target/doc/
+
+# Binary artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+noctra
+noctrad
+
+# Documentation build
+book/
+
+# FFI
+*.c
+*.h
+*.o
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Cache
+.cargo-ok
+.cargo-registry
+.cargo-lock
+
+# Local configuration
+config.local.toml
+noctra.conf

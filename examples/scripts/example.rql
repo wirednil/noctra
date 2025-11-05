@@ -1,0 +1,214 @@
+# Script RQL de Ejemplo - Noctra
+# Este script demuestra las extensiones RQL y el procesamiento batch
+
+# ===========================================
+# CONFIGURACIÓN INICIAL
+# ===========================================
+
+# Cambiar al esquema de trabajo
+USE payroll;
+
+# Configurar variables de sesión
+LET dept_default = 'IT';
+LET fecha_corte = '2023-01-01';
+LET incremento_salario = 1.08;
+LET output_format = 'csv';
+
+# Mostrar configuración
+SELECT 'Script RQL de Ejemplo - Noctra' as titulo;
+SELECT 'Departamento por defecto: ' || :dept_default as configuracion;
+SELECT 'Fecha de corte: ' || :fecha_corte as configuracion;
+
+# ===========================================
+# ANÁLISIS DE DATOS
+# ===========================================
+
+# Consulta básica con parámetros
+SELECT 
+    COUNT(*) as total_empleados,
+    AVG(salario) as salario_promedio,
+    MIN(salario) as salario_minimo,
+    MAX(salario) as salario_maximo
+FROM employees 
+WHERE activo = 1;
+
+# Consulta con parámetros posicionados
+SELECT nombre, dept, salario
+FROM employees 
+WHERE dept = $1 AND salario > $2
+ORDER BY salario DESC;
+
+# Consulta con parámetros nombrados y template condicional
+SELECT 
+    e.nroleg,
+    e.nombre,
+    e.dept,
+    e.cargo,
+    e.salario,
+    e.fecha_ingreso,
+    d.descripcion as dept_desc
+FROM employees e
+LEFT JOIN departments d ON e.dept = d.codigo
+WHERE 1=1
+{{#if dept_default}} AND e.dept = :dept_default {{/if}}
+{{#if fecha_corte}} AND e.fecha_ingreso >= :fecha_corte {{/if}}
+{{#if salario_minimo}} AND e.salario >= :salario_minimo {{/if}}
+ORDER BY e.salario DESC, e.nombre;
+
+# ===========================================
+# GENERACIÓN DE REPORTES
+# ===========================================
+
+# Reporte por departamento
+OUTPUT TO 'reporte_por_departamento.csv' FORMAT csv;
+SELECT 
+    dept,
+    COUNT(*) as cantidad_empleados,
+    ROUND(AVG(salario), 2) as salario_promedio,
+    MIN(salario) as salario_minimo,
+    MAX(salario) as salario_maximo,
+    SUM(CASE WHEN activo = 1 THEN 1 ELSE 0 END) as activos,
+    SUM(CASE WHEN activo = 0 THEN 1 ELSE 0 END) as inactivos
+FROM employees 
+GROUP BY dept
+ORDER BY salario_promedio DESC;
+
+OUTPUT TO STDOUT;
+
+# Reporte de empleados nuevos
+OUTPUT TO 'empleados_nuevos.json' FORMAT json;
+SELECT 
+    nroleg,
+    nombre,
+    dept,
+    cargo,
+    salario,
+    fecha_ingreso,
+    CASE 
+        WHEN fecha_ingreso >= DATE('now', '-6 months') THEN 'Reciente'
+        WHEN fecha_ingreso >= DATE('now', '-1 year') THEN 'Moderado'
+        ELSE 'Veterano'
+    END as categoria_antiguedad
+FROM employees 
+WHERE fecha_ingreso >= :fecha_corte
+ORDER BY fecha_ingreso DESC;
+
+OUTPUT TO STDOUT;
+
+# ===========================================
+# PROCESAMIENTO DE DATOS
+# ===========================================
+
+# Contar empleados por categoría salarial
+SELECT 
+    CASE 
+        WHEN salario < 50000 THEN 'Bajo'
+        WHEN salario < 75000 THEN 'Medio'
+        ELSE 'Alto'
+    END as categoria_salarial,
+    COUNT(*) as cantidad,
+    ROUND(AVG(salario), 2) as promedio_categoria
+FROM employees 
+WHERE activo = 1
+GROUP BY categoria_salarial
+ORDER BY promedio_categoria DESC;
+
+# ===========================================
+# USAR FORMULARIOS FDL2
+# ===========================================
+
+# Ejecutar formulario de empleados
+FORM LOAD '../empleados.toml';
+# El formulario se ejecutará con los parámetros de sesión actuales
+
+# Ejecutar formulario con parámetros específicos
+EXECFORM '../empleados.toml' WITH 
+    dept = 'VENTAS',
+    activo = true,
+    salario_desde = 60000;
+
+# ===========================================
+# FUNCIONES DE FECHA
+# ===========================================
+
+# Consultas con funciones de fecha
+SELECT 
+    nombre,
+    fecha_ingreso,
+    CURRENT_DATE as fecha_actual,
+    DATE(fecha_ingreso, 'start of month') as primer_dia_mes,
+    DATE(fecha_ingreso, '+1 year') as fecha_renovacion,
+    CAST((JULIANDAY(CURRENT_DATE) - JULIANDAY(fecha_ingreso)) / 365.25 AS INTEGER) as años_antiguedad
+FROM employees 
+WHERE activo = 1
+ORDER BY años_antiguedad DESC;
+
+# ===========================================
+# TRANSACCIONES
+# ===========================================
+
+# Ejemplo de transacción (comentado para evitar cambios reales)
+# BEGIN TRANSACTION;
+# 
+# INSERT INTO log_auditoria (accion, tabla, usuario, fecha)
+# VALUES ('CONSULTA_REPORTE', 'employees', 'script_ejemplo', CURRENT_TIMESTAMP);
+# 
+# UPDATE employees 
+# SET salario = salario * :incremento_salario
+# WHERE dept = 'IT' AND activo = 1;
+# 
+# COMMIT;
+# -- o ROLLBACK en caso de error
+
+# ===========================================
+# VALIDACIÓN DE RESULTADOS
+# ===========================================
+
+# Verificar que las consultas devolvieron datos
+SELECT 
+    'Validación de resultados del script' as titulo,
+    (SELECT COUNT(*) FROM employees WHERE activo = 1) as empleados_activos,
+    (SELECT COUNT(DISTINCT dept) FROM employees) as departamentos_unicos,
+    (SELECT MAX(salario) FROM employees WHERE activo = 1) as salario_maximo,
+    (SELECT MIN(salario) FROM employees WHERE activo = 1) as salario_minimo;
+
+# ===========================================
+# MENSAJE FINAL
+# ===========================================
+
+SELECT 
+    'Script RQL ejecutado exitosamente' as estado,
+    CURRENT_TIMESTAMP as fecha_ejecucion,
+    'Noctra v0.1.0' as version;
+
+# ===========================================
+# EXPORTAR CONFIGURACIÓN
+# ===========================================
+
+# Exportar variables de sesión para debugging
+OUTPUT TO 'session_variables.json' FORMAT json;
+SELECT 
+    'dept_default' as variable,
+    :dept_default as valor,
+    'text' as tipo;
+
+SELECT 
+    'fecha_corte' as variable,
+    :fecha_corte as valor,
+    'date' as tipo;
+
+OUTPUT TO STDOUT;
+
+# ===========================================
+# LIMPIEZA
+# ===========================================
+
+# Cancelar cualquier redirección de salida pendiente
+OUTPUT TO STDOUT;
+
+# Limpiar variables de sesión (opcional)
+# LET dept_default = NULL;
+# LET fecha_corte = NULL;
+
+# Mensaje final de confirmación
+SELECT 'Ejecución de script RQL completada' as mensaje_final;

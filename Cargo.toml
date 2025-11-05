@@ -1,0 +1,66 @@
+[workspace]
+members = [
+    "crates/core",
+    "crates/parser",
+    "crates/cli",
+    "crates/tui",
+    "crates/srv",
+    "crates/formlib",
+    "crates/ffi"
+]
+exclude = [
+    "examples/",
+    "docs/",
+    "testing/",
+    ".github/"
+]
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+debug = false
+strip = true
+
+[profile.dev]
+opt-level = 0
+
+# Workspace-level dependencies
+[workspace.dependencies]
+# Core dependencies shared across crates
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+env_logger = "0.10"
+clap = { version = "4.0", features = ["derive", "cargo"] }
+
+# Web framework dependencies
+axum = { version = "0.7", features = ["json", "query"] }
+tower = { version = "0.4", features = ["util", "timeout"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Database dependencies
+rusqlite = { version = "0.32", features = ["bundled"] }
+sqlparser = "0.40"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json"] }
+
+# Error handling
+serde_with = "3.8"
+
+# Testing dependencies
+tokio-test = { version = "0.4" }
+tempfile = { version = "3.0" }
+
+# Async traits
+async-trait = "0.1"
+
+# Data structures
+uuid = { version = "1.0", features = ["v4", "serde"] }
+regex = "1.10"

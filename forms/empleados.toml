@@ -1,0 +1,15 @@
+title = "Consulta Empleados"
+
+[fields.id]
+label = "ID Empleado"
+type = "int"
+required = false
+
+[fields.nombre]
+label = "Nombre"
+type = "text"
+required = false
+
+[actions.consulta]
+sql = "SELECT * FROM employees WHERE id = :id OR name LIKE :nombre"
+params = ["id", "nombre"]

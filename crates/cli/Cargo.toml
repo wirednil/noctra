@@ -1,0 +1,49 @@
+[package]
+name = "noctra-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI and REPL interface for Noctra"
+license = "MIT OR Apache-2.0"
+authors = ["Claude Code <claude@anthropic.com>"]
+# Local project - repository = "local"
+
+[dependencies]
+# Core dependencies
+noctra-core = { path = "../core" }
+noctra-parser = { path = "../parser" }
+noctra-formlib = { path = "../formlib" }
+noctra-tui = { path = "../tui" }
+
+# CLI framework
+clap = { workspace = true, features = ["derive", "cargo"] }
+clap_complete = "4.0"
+
+# REPL editing
+rustyline = "12.0"
+rustyline-derive = "0.5"
+
+# Async runtime
+tokio = { workspace = true, features = ["full"] }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+log = { workspace = true }
+env_logger = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio-test = { workspace = true }
+
+[[bin]]
+name = "noctra"
+path = "src/main.rs"
+
+[lib]
+name = "noctra_cli"
+crate-type = ["cdylib"]
+
+[package.metadata.docs.rs]
+all-features = true
