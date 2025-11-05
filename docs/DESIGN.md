@@ -1,0 +1,1654 @@
+# Noctra - Technical Design Document
+
+> **Version:** 1.0
+> **Date:** 2025-01-05
+> **Status:** Active Development
+
+## Table of Contents
+
+1. [Executive Summary](#1-executive-summary)
+2. [System Architecture](#2-system-architecture)
+3. [Core Components](#3-core-components)
+4. [RQL Language Specification](#4-rql-language-specification)
+5. [FDL2 Form Definition Language](#5-fdl2-form-definition-language)
+6. [Noctra Window Manager (NWM)](#6-noctra-window-manager-nwm)
+7. [Database Backend Architecture](#7-database-backend-architecture)
+8. [Security & Performance](#8-security--performance)
+9. [Testing Strategy](#9-testing-strategy)
+10. [Deployment & Operations](#10-deployment--operations)
+
+---
+
+## 1. Executive Summary
+
+### 1.1 Vision
+
+**Noctra** is a modern interactive SQL environment and declarative forms framework built in Rust. It combines the productivity of 4GL environments with contemporary technology standards.
+
+**Core Philosophy:**
+- Text-first: Everything is text (queries, forms, configs)
+- SQL-first: Direct SQL access without ORM overhead
+- Declarative forms: TOML-based form definitions
+- Terminal UI: Professional ncurses-based interface
+- Batch-capable: Script automation support
+
+### 1.2 Key Features
+
+- **Interactive REPL** with command history and editing
+- **Extended SQL (RQL)** with named/positional parameters
+- **Declarative Forms (FDL2)** in TOML format
+- **Terminal UI (NWM)** - Noctra Window Manager
+- **Multiple backends** (SQLite, PostgreSQL, MySQL)
+- **Batch mode** for automation
+- **Optional daemon** (noctrad) for remote access
+
+### 1.3 Target Users
+
+- Database administrators
+- Data analysts
+- Application developers
+- Business users (via forms)
+- DevOps engineers (via batch scripts)
+
+---
+
+## 2. System Architecture
+
+### 2.1 High-Level Architecture
+
+```
+┌────────────────────────────────────────────────┐
+│              User Interface                    │
+│  ┌──────────────┐      ┌──────────────┐       │
+│  │  CLI / REPL  │      │  TUI (NWM)   │       │
+│  └──────┬───────┘      └──────┬───────┘       │
+│         │                     │                │
+│         └──────────┬──────────┘                │
+│                    │                           │
+└────────────────────┼───────────────────────────┘
+                     │
+┌────────────────────▼───────────────────────────┐
+│           Noctra Core Engine                   │
+│  ┌──────────────┐      ┌──────────────┐       │
+│  │  RQL Parser  │      │   Executor   │       │
+│  └──────┬───────┘      └──────┬───────┘       │
+│         │                     │                │
+│         └──────────┬──────────┘                │
+│                    │                           │
+└────────────────────┼───────────────────────────┘
+                     │
+┌────────────────────▼───────────────────────────┐
+│         Backend Layer                          │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐        │
+│  │ SQLite  │  │Postgres │  │  MySQL  │        │
+│  └─────────┘  └─────────┘  └─────────┘        │
+└────────────────────────────────────────────────┘
+```
+
+### 2.2 Workspace Structure
+
+```
+noctra/
+├── Cargo.toml              # Workspace root
+├── README.md
+├── docs/
+│   ├── DESIGN.md          # This document
+│   ├── GETTING_STARTED.md
+│   ├── FDL2-SPEC.md
+│   └── RQL-EXTENSIONS.md
+├── crates/
+│   ├── noctra-core/       # Runtime engine
+│   ├── noctra-parser/     # RQL parser
+│   ├── noctra-cli/        # CLI/REPL
+│   ├── noctra-tui/        # Terminal UI
+│   ├── noctra-srv/        # Daemon server
+│   ├── noctra-formlib/    # Forms library
+│   └── noctra-ffi/        # C bindings
+├── examples/
+│   ├── forms/
+│   ├── scripts/
+│   └── sample.db
+└── tests/
+    ├── integration/
+    └── fixtures/
+```
+
+### 2.3 Data Flow
+
+**Query Execution Flow:**
+
+```
+User Input (SQL/RQL)
+  │
+  ├─> RQL Parser
+  │     └─> Abstract Syntax Tree (AST)
+  │
+  ├─> Executor
+  │     ├─> Parameter Binding
+  │     ├─> Template Processing
+  │     └─> Backend Selection
+  │
+  ├─> Database Backend
+  │     ├─> Query Translation
+  │     ├─> Execution
+  │     └─> Result Set
+  │
+  └─> Formatter
+        ├─> Table Rendering (TUI)
+        ├─> CSV/JSON Export
+        └─> User Display
+```
+
+---
+
+## 3. Core Components
+
+### 3.1 Noctra Core (`noctra-core`)
+
+**Purpose:** Central runtime engine with execution logic, type system, and session management.
+
+#### Type System
+
+```rust
+/// Core value type representing all SQL data types
+pub enum Value {
+    Null,
+    Boolean(bool),
+    Integer(i64),
+    Float(f64),
+    Text(String),
+    Bytes(Vec<u8>),
+    Date(NaiveDate),
+    DateTime(NaiveDateTime),
+    Decimal(Decimal),
+}
+
+impl Value {
+    pub fn type_name(&self) -> &str;
+    pub fn is_null(&self) -> bool;
+    pub fn coerce_to(&self, target: ValueType) -> Result<Value>;
+}
+```
+
+#### Executor
+
+```rust
+pub struct Executor {
+    backend: Box<dyn DatabaseBackend>,
+    session: Session,
+    config: ExecutorConfig,
+}
+
+impl Executor {
+    /// Execute a single RQL statement
+    pub async fn execute(&mut self, stmt: &RqlStatement)
+        -> Result<ExecutionResult>;
+
+    /// Execute a batch of statements
+    pub async fn execute_batch(&mut self, statements: Vec<RqlStatement>)
+        -> Result<Vec<ExecutionResult>>;
+
+    /// Execute with timeout
+    pub async fn execute_with_timeout(
+        &mut self,
+        stmt: &RqlStatement,
+        timeout: Duration
+    ) -> Result<ExecutionResult>;
+}
+
+pub struct Session {
+    variables: HashMap<String, Value>,
+    current_schema: Option<String>,
+    transaction_state: TransactionState,
+    query_history: VecDeque<QueryHistoryEntry>,
+}
+```
+
+#### Configuration
+
+```rust
+pub struct ExecutorConfig {
+    pub max_rows: Option<usize>,
+    pub query_timeout: Duration,
+    pub auto_commit: bool,
+    pub result_format: ResultFormat,
+}
+
+pub enum ResultFormat {
+    Table,
+    Csv { delimiter: char },
+    Json { pretty: bool },
+    Custom(Box<dyn Formatter>),
+}
+```
+
+### 3.2 RQL Parser (`noctra-parser`)
+
+**Purpose:** Parse extended SQL (RQL) with parameter support and custom commands.
+
+#### Architecture
+
+```rust
+pub struct RqlParser {
+    base_parser: SqlParser,  // sqlparser-rs wrapper
+    extensions: ExtensionRegistry,
+}
+
+pub struct RqlAst {
+    pub statements: Vec<RqlStatement>,
+    pub parameters: Vec<Parameter>,
+}
+
+pub enum RqlStatement {
+    // Standard SQL
+    Select(SelectStatement),
+    Insert(InsertStatement),
+    Update(UpdateStatement),
+    Delete(DeleteStatement),
+
+    // DDL
+    CreateTable(CreateTableStatement),
+    DropTable(DropTableStatement),
+
+    // RQL Extensions
+    Use { schema: String },
+    Let { name: String, value: Value },
+    Show { target: ShowTarget },
+    FormLoad { path: String },
+    OutputTo { destination: OutputDestination },
+}
+
+pub enum Parameter {
+    Positional(usize),           // $1, $2, ...
+    Named(String),               // :name
+}
+```
+
+#### Extension Points
+
+```rust
+pub trait ParserExtension {
+    fn keyword(&self) -> &str;
+    fn parse(&self, tokens: &mut TokenStream) -> Result<RqlStatement>;
+}
+
+// Example: USE command
+pub struct UseExtension;
+impl ParserExtension for UseExtension {
+    fn keyword(&self) -> &str { "USE" }
+    fn parse(&self, tokens: &mut TokenStream) -> Result<RqlStatement> {
+        let schema = tokens.expect_identifier()?;
+        Ok(RqlStatement::Use { schema })
+    }
+}
+```
+
+### 3.3 Form Library (`noctra-formlib`)
+
+**Purpose:** Load, validate, and compile declarative forms.
+
+#### Form Structure
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Form {
+    pub title: String,
+    pub schema: Option<String>,
+    pub fields: HashMap<String, Field>,
+    pub actions: HashMap<String, Action>,
+    pub validations: Vec<ValidationRule>,
+    pub views: HashMap<String, View>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Field {
+    pub label: String,
+    pub field_type: FieldType,
+    pub required: bool,
+    pub default: Option<Value>,
+    pub width: Option<u32>,
+    pub validations: Vec<FieldValidation>,
+}
+
+pub enum FieldType {
+    Text { max_length: Option<usize> },
+    Integer { min: Option<i64>, max: Option<i64> },
+    Float { precision: u8 },
+    Boolean,
+    Date { format: String },
+    Enum { options: Vec<String> },
+    Password,
+}
+```
+
+#### Form Compiler
+
+```rust
+pub struct FormCompiler {
+    template_engine: TemplateEngine,
+}
+
+impl FormCompiler {
+    /// Compile form to executable action
+    pub fn compile(&self, form: &Form, action_name: &str)
+        -> Result<CompiledAction>;
+
+    /// Bind parameters from form values
+    pub fn bind_parameters(
+        &self,
+        action: &CompiledAction,
+        values: HashMap<String, Value>
+    ) -> Result<BoundQuery>;
+}
+
+pub struct CompiledAction {
+    sql_template: String,
+    parameters: Vec<Parameter>,
+    conditions: Vec<ConditionalBlock>,
+}
+```
+
+### 3.4 Terminal UI (`noctra-tui`)
+
+**Purpose:** Professional ncurses-based interface (Noctra Window Manager).
+
+See [Section 6: Noctra Window Manager](#6-noctra-window-manager-nwm) for detailed specification.
+
+### 3.5 CLI / REPL (`noctra-cli`)
+
+**Purpose:** Interactive command-line interface.
+
+```rust
+pub struct Repl {
+    executor: Arc<Mutex<Executor>>,
+    editor: Editor<ReplHelper>,
+    history: HistoryManager,
+    config: ReplConfig,
+}
+
+impl Repl {
+    pub async fn run(&mut self) -> Result<()> {
+        loop {
+            let line = self.editor.readline("noctra> ")?;
+
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            self.history.add(&line);
+
+            match self.handle_line(&line).await {
+                Ok(_) => {},
+                Err(e) => eprintln!("Error: {}", e),
+            }
+        }
+    }
+
+    async fn handle_line(&mut self, line: &str) -> Result<()> {
+        // Meta-commands
+        if line.starts_with('.') {
+            return self.handle_meta_command(line).await;
+        }
+
+        // RQL execution
+        let ast = self.parser.parse(line)?;
+        let result = self.executor.lock().await.execute(&ast).await?;
+
+        self.display_result(result)?;
+        Ok(())
+    }
+}
+```
+
+---
+
+## 4. RQL Language Specification
+
+### 4.1 Core SQL Support
+
+RQL is a superset of standard SQL. All valid SQL queries are valid RQL queries.
+
+**Supported SQL Features:**
+- SELECT with JOINs, GROUP BY, HAVING, ORDER BY
+- INSERT, UPDATE, DELETE
+- CREATE TABLE, DROP TABLE, ALTER TABLE
+- CREATE INDEX, DROP INDEX
+- Transactions (BEGIN, COMMIT, ROLLBACK)
+- Subqueries and CTEs
+
+### 4.2 Parameter Syntax
+
+#### Positional Parameters
+
+```sql
+SELECT * FROM employees WHERE dept = $1 AND salary > $2;
+```
+
+Parameters are bound by position:
+```rust
+executor.execute_with_params(query, vec![
+    Value::Text("SALES".into()),
+    Value::Integer(50000),
+])?;
+```
+
+#### Named Parameters
+
+```sql
+SELECT * FROM employees WHERE dept = :dept AND salary > :min_salary;
+```
+
+Parameters are bound by name:
+```rust
+let params = HashMap::from([
+    ("dept".to_string(), Value::Text("SALES".into())),
+    ("min_salary".to_string(), Value::Integer(50000)),
+]);
+executor.execute_with_params(query, params)?;
+```
+
+### 4.3 RQL Extensions
+
+#### USE Command
+
+Switch active schema/database:
+
+```sql
+USE payroll;
+USE demo;
+```
+
+#### LET Command
+
+Define session variables:
+
+```sql
+LET dept = 'SALES';
+LET min_salary = 50000;
+LET active = true;
+
+SELECT * FROM employees WHERE dept = :dept AND salary > :min_salary;
+```
+
+#### SHOW Command
+
+Display metadata:
+
+```sql
+SHOW TABLES;
+SHOW COLUMNS FROM employees;
+SHOW INDEXES FROM employees;
+SHOW DATABASES;
+```
+
+#### OUTPUT Command
+
+Redirect query results:
+
+```sql
+OUTPUT TO 'results.csv' FORMAT CSV;
+SELECT * FROM employees;
+
+OUTPUT TO 'report.json' FORMAT JSON;
+SELECT * FROM sales WHERE year = 2023;
+
+OUTPUT TO TERMINAL;  -- Reset to terminal output
+```
+
+#### FORM Commands
+
+Load and execute forms:
+
+```sql
+FORM LOAD 'employees.toml';
+FORM EXECUTE 'employees.toml' WITH dept = 'SALES';
+```
+
+### 4.4 Template Processing
+
+RQL supports conditional SQL generation:
+
+```sql
+SELECT * FROM employees
+WHERE 1=1
+{{#if dept}} AND dept = :dept {{/if}}
+{{#if min_salary}} AND salary >= :min_salary {{/if}}
+{{#if active}} AND status = 'ACTIVE' {{/if}}
+ORDER BY name;
+```
+
+**Template Syntax:**
+- `{{#if var}} ... {{/if}}` - Conditional inclusion
+- `{{#unless var}} ... {{/unless}}` - Negative conditional
+- `{{var}}` - Variable interpolation
+
+---
+
+## 5. FDL2 Form Definition Language
+
+### 5.1 Overview
+
+FDL2 (Form Definition Language 2) is a TOML-based declarative language for defining data entry forms and their associated database operations.
+
+### 5.2 Complete Example
+
+```toml
+title = "Employee Management"
+schema = "payroll"
+description = "Manage employee records"
+
+# Field Definitions
+[fields.employee_id]
+label = "Employee ID"
+field_type = "integer"
+required = true
+readonly = false
+width = 10
+validations = [
+    { type = "min", value = 1 },
+    { type = "max", value = 99999 }
+]
+
+[fields.name]
+label = "Full Name"
+field_type = "text"
+required = true
+width = 40
+validations = [
+    { type = "min_length", value = 3 },
+    { type = "max_length", value = 100 },
+    { type = "regex", pattern = "^[A-Za-z ]+$" }
+]
+
+[fields.department]
+label = "Department"
+field_type = "enum"
+required = true
+options = ["SALES", "MARKETING", "IT", "HR", "FINANCE"]
+default = "IT"
+
+[fields.salary]
+label = "Annual Salary"
+field_type = "float"
+required = true
+validations = [
+    { type = "min", value = 0 },
+    { type = "max", value = 999999.99 }
+]
+format = "currency"
+
+[fields.hire_date]
+label = "Hire Date"
+field_type = "date"
+required = true
+format = "%Y-%m-%d"
+default = "today"
+
+[fields.active]
+label = "Active"
+field_type = "boolean"
+default = true
+
+# Actions
+[actions.search]
+type = "query"
+sql = """
+SELECT employee_id, name, department, salary, hire_date
+FROM employees
+WHERE 1=1
+{{#if employee_id}} AND employee_id = :employee_id {{/if}}
+{{#if name}} AND name LIKE '%' || :name || '%' {{/if}}
+{{#if department}} AND department = :department {{/if}}
+{{#if active}} AND active = :active {{/if}}
+ORDER BY name;
+"""
+params = ["employee_id", "name", "department", "active"]
+on_success = "display_results"
+on_error = "show_error"
+
+[actions.insert]
+type = "insert"
+table = "employees"
+mapping = {
+    employee_id = "employee_id",
+    name = "name",
+    department = "department",
+    salary = "salary",
+    hire_date = "hire_date",
+    active = "active"
+}
+on_success = "show_confirmation"
+on_error = "show_error"
+
+[actions.update]
+type = "update"
+table = "employees"
+where = "employee_id = :employee_id"
+mapping = {
+    name = "name",
+    department = "department",
+    salary = "salary",
+    active = "active"
+}
+on_success = "show_confirmation"
+
+# Views
+[views.display_results]
+type = "table"
+title = "Search Results"
+columns = ["employee_id", "name", "department", "salary", "hire_date"]
+pager = true
+max_rows = 100
+
+[views.show_confirmation]
+type = "message"
+title = "Success"
+message = "Operation completed successfully"
+
+[views.show_error]
+type = "message"
+title = "Error"
+message = "Error: {{error_message}}"
+```
+
+### 5.3 Field Types Reference
+
+| Type | Description | Parameters |
+|------|-------------|------------|
+| `text` | String input | `max_length` |
+| `integer` | Integer number | `min`, `max` |
+| `float` | Decimal number | `min`, `max`, `precision` |
+| `boolean` | True/false | - |
+| `date` | Date value | `format` |
+| `datetime` | Date and time | `format` |
+| `enum` | Selection from list | `options` |
+| `password` | Hidden text | `min_length` |
+
+### 5.4 Validation Rules
+
+```toml
+validations = [
+    { type = "required" },
+    { type = "min", value = 0 },
+    { type = "max", value = 100 },
+    { type = "min_length", value = 3 },
+    { type = "max_length", value = 50 },
+    { type = "regex", pattern = "^[A-Za-z]+$" },
+    { type = "email" },
+    { type = "url" },
+    { type = "range", min = 18, max = 65 },
+]
+```
+
+### 5.5 Action Types
+
+**Query Action:**
+```toml
+[actions.search]
+type = "query"
+sql = "SELECT * FROM table WHERE condition"
+params = ["param1", "param2"]
+```
+
+**Insert Action:**
+```toml
+[actions.create]
+type = "insert"
+table = "employees"
+mapping = { field1 = "col1", field2 = "col2" }
+```
+
+**Update Action:**
+```toml
+[actions.update]
+type = "update"
+table = "employees"
+where = "id = :id"
+mapping = { field1 = "col1" }
+```
+
+**Delete Action:**
+```toml
+[actions.delete]
+type = "delete"
+table = "employees"
+where = "id = :id"
+confirm = true
+```
+
+**Custom Action:**
+```toml
+[actions.custom]
+type = "custom"
+sql = """
+UPDATE employees SET salary = salary * 1.05
+WHERE department = :dept
+"""
+```
+
+---
+
+## 6. Noctra Window Manager (NWM)
+
+### 6.1 Overview
+
+The Noctra Window Manager (NWM) is a professional terminal-based user interface built on ncurses, providing a consistent and productive environment for database interaction.
+
+### 6.2 Screen Layout
+
+```
++--------------------------------------------------------------------------------+
+|                                                                                |
+|──( COMMAND ) Noctra 0.1.0 ────────────────────────────────────── Line: 1 ────|
+|                                                                                |
+|                                                                                |
+|                    [Main Content Area - Dynamic]                               |
+|                                                                                |
+|                                                                                |
+|────────────────────────────────────────────────────────────────────────────────|
+| F5:Execute      F1:Help         F8:Cancel       End:Exit                      |
+| PgUp:Prev Query PgDn:Next Query Insert:Mode     Delete:Clear                  |
+| Alt+R:Load File Alt+W:Save File Ctrl+L:Redraw                                 |
+|                                                                                |
++--------------------------------------------------------------------------------+
+```
+
+**Components:**
+1. **Header Bar** - Shows mode, version, and line number
+2. **Main Area** - Dynamic content (command input, results, forms, dialogs)
+3. **Separator Line** - Visual boundary
+4. **Footer Bar** - Key bindings reference (context-sensitive)
+
+### 6.3 Operating Modes
+
+#### Command Mode
+
+Default mode for entering SQL/RQL queries.
+
+```
+┌────────────────────────────────────────────────────────┐
+│                                                        │
+│──( COMMAND ) Noctra 0.1.0 ──────────────── Line: 1 ───│
+│                                                        │
+│ SELECT * FROM employees WHERE dept = 'SALES'▊         │
+│                                                        │
+│                                                        │
+│────────────────────────────────────────────────────────│
+│ F5:Execute  F1:Help  PgUp:History  Alt+R:Load         │
+└────────────────────────────────────────────────────────┘
+```
+
+#### Result Mode
+
+Displays query results in tabular format.
+
+```
+┌────────────────────────────────────────────────────────┐
+│                                                        │
+│──( RESULT ) Noctra 0.1.0 ──────────────────────────────│
+│                                                        │
+│ ┌──────┬──────────────┬────────────┬──────────┐       │
+│ │ ID   │ Name         │ Department │ Salary   │       │
+│ ├──────┼──────────────┼────────────┼──────────┤       │
+│ │ 1001 │ John Smith   │ SALES      │ 75000.00 │       │
+│ │ 1002 │ Mary Johnson │ SALES      │ 68000.00 │       │
+│ │ 1003 │ Bob Williams │ SALES      │ 82000.00 │       │
+│ └──────┴──────────────┴────────────┴──────────┘       │
+│ (3 rows, 15.2ms)                                       │
+│────────────────────────────────────────────────────────│
+│ PgUp:Scroll Up  PgDn:Scroll Down  Q:Quit Result       │
+└────────────────────────────────────────────────────────┘
+```
+
+#### Form Mode
+
+Renders interactive forms for data entry.
+
+```
+┌────────────────────────────────────────────────────────┐
+│                                                        │
+│──( FORM ) Employee Search ──────────────────────────────│
+│                                                        │
+│  Employee ID: [     ]                                  │
+│  Name:        [                              ]         │
+│  Department:  [SALES     ▼]                            │
+│  Active:      [✓] Yes  [ ] No                          │
+│                                                        │
+│  [  Search  ]  [  Cancel  ]                            │
+│────────────────────────────────────────────────────────│
+│ Tab:Next Field  Shift+Tab:Prev  Enter:Submit          │
+└────────────────────────────────────────────────────────┘
+```
+
+#### Dialog Mode
+
+Modal dialogs for confirmations and messages.
+
+```
+┌────────────────────────────────────────────────────────┐
+│                                                        │
+│──( COMMAND ) Noctra 0.1.0 ──────────────────────────────│
+│                                                        │
+│         ┌──────────────────────────────────┐           │
+│         │        Exit Noctra?              │           │
+│         │                                  │           │
+│         │  [ Yes ]  [ No ]  [ Cancel ]    │           │
+│         └──────────────────────────────────┘           │
+│                                                        │
+│────────────────────────────────────────────────────────│
+│ Tab:Select  Enter:Confirm  Esc:Cancel                 │
+└────────────────────────────────────────────────────────┘
+```
+
+### 6.4 Key Bindings
+
+| Key | Action | Context |
+|-----|--------|---------|
+| **F5** | Execute query | Command mode |
+| **F1** | Show help | All modes |
+| **F8** | Cancel/Interrupt | Execution |
+| **End** | Exit application | All modes |
+| **PgUp** | Previous query/scroll up | Command/Result |
+| **PgDn** | Next query/scroll down | Command/Result |
+| **Insert** | Toggle insert mode | Command |
+| **Delete** | Delete character | Command |
+| **Alt+R** | Load file | Command |
+| **Alt+W** | Save to file | Command |
+| **Ctrl+L** | Redraw screen | All modes |
+| **Tab** | Next field/option | Form/Dialog |
+| **Shift+Tab** | Previous field | Form/Dialog |
+| **Enter** | Confirm/Submit | Form/Dialog |
+| **Esc** | Cancel | Form/Dialog |
+
+### 6.5 Color Scheme
+
+**Classic Theme (Default):**
+- Background: Black (#000000)
+- Text: Phosphor Green (#00FF00)
+- Highlight: Cyan (#00FFFF)
+- Warning: Yellow (#FFFF00)
+- Error: Red (#FF0000)
+- Border: Dim White (#AAAAAA)
+
+**Modern Theme:**
+- Background: Dark Gray (#1E1E1E)
+- Text: Light Gray (#D4D4D4)
+- Highlight: Blue (#569CD6)
+- Warning: Orange (#CE9178)
+- Error: Red (#F44747)
+- Border: Medium Gray (#808080)
+
+### 6.6 Table Rendering
+
+**ASCII Box Drawing:**
+```
+┌───────┬──────────────┬────────────┬──────────┐
+│ ID    │ Name         │ Department │ Salary   │
+├───────┼──────────────┼────────────┼──────────┤
+│ 1001  │ John Smith   │ SALES      │ 75000.00 │
+│ 1002  │ Mary Johnson │ SALES      │ 68000.00 │
+└───────┴──────────────┴────────────┴──────────┘
+```
+
+**Features:**
+- Automatic column width calculation
+- Header alignment
+- Number right-alignment
+- Text left-alignment
+- Pagination for large result sets
+- Scrolling support
+
+---
+
+## 7. Database Backend Architecture
+
+### 7.1 Backend Trait
+
+All database backends implement the `DatabaseBackend` trait:
+
+```rust
+#[async_trait]
+pub trait DatabaseBackend: Send + Sync {
+    /// Connect to database
+    async fn connect(&self, config: &ConnectionConfig)
+        -> Result<Box<dyn Connection>>;
+
+    /// Query capabilities
+    fn features(&self) -> BackendFeatures;
+
+    /// Backend name
+    fn name(&self) -> &str;
+}
+
+#[async_trait]
+pub trait Connection: Send + Sync {
+    /// Execute query and return results
+    async fn execute(&mut self, query: &str, params: &[Value])
+        -> Result<ResultSet>;
+
+    /// Prepare statement for reuse
+    async fn prepare(&mut self, query: &str)
+        -> Result<Box<dyn PreparedStatement>>;
+
+    /// Start transaction
+    async fn begin_transaction(&mut self) -> Result<()>;
+
+    /// Commit transaction
+    async fn commit(&mut self) -> Result<()>;
+
+    /// Rollback transaction
+    async fn rollback(&mut self) -> Result<()>;
+
+    /// Get table metadata
+    async fn table_info(&mut self, table: &str)
+        -> Result<TableMetadata>;
+}
+
+pub struct BackendFeatures {
+    pub supports_transactions: bool,
+    pub supports_savepoints: bool,
+    pub supports_returning: bool,
+    pub supports_cte: bool,
+    pub supports_window_functions: bool,
+    pub max_parameter_count: Option<usize>,
+}
+```
+
+### 7.2 SQLite Backend
+
+```rust
+pub struct SqliteBackend {
+    pool: Pool<Sqlite>,
+}
+
+impl SqliteBackend {
+    pub async fn new(path: &str) -> Result<Self> {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect(path)
+            .await?;
+
+        Ok(Self { pool })
+    }
+}
+
+#[async_trait]
+impl DatabaseBackend for SqliteBackend {
+    async fn connect(&self, _config: &ConnectionConfig)
+        -> Result<Box<dyn Connection>> {
+        let conn = self.pool.acquire().await?;
+        Ok(Box::new(SqliteConnection::new(conn)))
+    }
+
+    fn features(&self) -> BackendFeatures {
+        BackendFeatures {
+            supports_transactions: true,
+            supports_savepoints: true,
+            supports_returning: true,
+            supports_cte: true,
+            supports_window_functions: true,
+            max_parameter_count: Some(32766),
+        }
+    }
+
+    fn name(&self) -> &str { "sqlite" }
+}
+```
+
+### 7.3 PostgreSQL Backend
+
+```rust
+pub struct PostgresBackend {
+    pool: Pool<Postgres>,
+}
+
+impl PostgresBackend {
+    pub async fn new(connection_string: &str) -> Result<Self> {
+        let pool = PgPoolOptions::new()
+            .max_connections(10)
+            .connect(connection_string)
+            .await?;
+
+        Ok(Self { pool })
+    }
+}
+
+#[async_trait]
+impl DatabaseBackend for PostgresBackend {
+    async fn connect(&self, _config: &ConnectionConfig)
+        -> Result<Box<dyn Connection>> {
+        let conn = self.pool.acquire().await?;
+        Ok(Box::new(PostgresConnection::new(conn)))
+    }
+
+    fn features(&self) -> BackendFeatures {
+        BackendFeatures {
+            supports_transactions: true,
+            supports_savepoints: true,
+            supports_returning: true,
+            supports_cte: true,
+            supports_window_functions: true,
+            max_parameter_count: Some(65535),
+        }
+    }
+
+    fn name(&self) -> &str { "postgresql" }
+}
+```
+
+### 7.4 Connection Pooling
+
+```rust
+pub struct ConnectionPool {
+    backend: Arc<dyn DatabaseBackend>,
+    active: Arc<Mutex<Vec<Box<dyn Connection>>>>,
+    max_size: usize,
+}
+
+impl ConnectionPool {
+    pub async fn acquire(&self) -> Result<PooledConnection> {
+        // Try to get existing connection
+        if let Some(conn) = self.active.lock().await.pop() {
+            return Ok(PooledConnection::new(conn, self.clone()));
+        }
+
+        // Create new connection if under limit
+        if self.active.lock().await.len() < self.max_size {
+            let conn = self.backend.connect(&ConnectionConfig::default()).await?;
+            return Ok(PooledConnection::new(conn, self.clone()));
+        }
+
+        // Wait for available connection
+        // ... (implementation)
+    }
+}
+```
+
+---
+
+## 8. Security & Performance
+
+### 8.1 Security Measures
+
+#### SQL Injection Prevention
+
+**Always use parameterized queries:**
+
+```rust
+// ❌ UNSAFE - Direct string concatenation
+let query = format!("SELECT * FROM users WHERE name = '{}'", user_input);
+
+// ✅ SAFE - Parameterized query
+let query = "SELECT * FROM users WHERE name = $1";
+executor.execute_with_params(query, vec![Value::Text(user_input)])?;
+```
+
+**Input validation:**
+
+```rust
+pub struct InputValidator {
+    allowed_tables: HashSet<String>,
+    max_query_length: usize,
+}
+
+impl InputValidator {
+    pub fn validate_table_name(&self, name: &str) -> Result<()> {
+        if !self.allowed_tables.contains(name) {
+            return Err(Error::UnauthorizedTable(name.to_string()));
+        }
+        Ok(())
+    }
+
+    pub fn validate_query(&self, query: &str) -> Result<()> {
+        if query.len() > self.max_query_length {
+            return Err(Error::QueryTooLong);
+        }
+        Ok(())
+    }
+}
+```
+
+#### Resource Limits
+
+```rust
+pub struct ResourceLimits {
+    pub max_rows: usize,
+    pub query_timeout: Duration,
+    pub max_memory: usize,
+}
+
+impl Executor {
+    pub async fn execute_with_limits(
+        &mut self,
+        query: &str,
+        limits: &ResourceLimits
+    ) -> Result<ResultSet> {
+        // Set timeout
+        let result = timeout(limits.query_timeout, async {
+            let mut result = self.backend.execute(query, &[]).await?;
+
+            // Limit rows
+            if result.rows.len() > limits.max_rows {
+                result.rows.truncate(limits.max_rows);
+                result.truncated = true;
+            }
+
+            Ok(result)
+        }).await??;
+
+        Ok(result)
+    }
+}
+```
+
+#### File Operations Security
+
+```rust
+pub struct FileValidator {
+    allowed_paths: Vec<PathBuf>,
+}
+
+impl FileValidator {
+    pub fn validate_path(&self, path: &Path) -> Result<()> {
+        let canonical = path.canonicalize()?;
+
+        // Check if path is under allowed directories
+        for allowed in &self.allowed_paths {
+            if canonical.starts_with(allowed) {
+                return Ok(());
+            }
+        }
+
+        Err(Error::UnauthorizedPath(path.to_path_buf()))
+    }
+}
+```
+
+### 8.2 Performance Optimization
+
+#### Query Caching
+
+```rust
+pub struct QueryCache {
+    cache: Arc<Mutex<LruCache<String, ResultSet>>>,
+    ttl: Duration,
+}
+
+impl QueryCache {
+    pub async fn get_or_execute<F, Fut>(
+        &self,
+        query: &str,
+        executor: F
+    ) -> Result<ResultSet>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<ResultSet>>,
+    {
+        // Check cache
+        if let Some(cached) = self.cache.lock().await.get(query) {
+            if !cached.is_expired(self.ttl) {
+                return Ok(cached.clone());
+            }
+        }
+
+        // Execute and cache
+        let result = executor().await?;
+        self.cache.lock().await.put(query.to_string(), result.clone());
+
+        Ok(result)
+    }
+}
+```
+
+#### Prepared Statement Pool
+
+```rust
+pub struct PreparedStatementPool {
+    statements: Arc<Mutex<HashMap<String, PreparedStatement>>>,
+    max_size: usize,
+}
+
+impl PreparedStatementPool {
+    pub async fn get_or_prepare(
+        &self,
+        query: &str,
+        conn: &mut dyn Connection
+    ) -> Result<PreparedStatement> {
+        let mut statements = self.statements.lock().await;
+
+        if let Some(stmt) = statements.get(query) {
+            return Ok(stmt.clone());
+        }
+
+        // Evict oldest if at capacity
+        if statements.len() >= self.max_size {
+            // LRU eviction logic
+        }
+
+        let stmt = conn.prepare(query).await?;
+        statements.insert(query.to_string(), stmt.clone());
+
+        Ok(stmt)
+    }
+}
+```
+
+#### Memory Management
+
+```rust
+pub struct ResultSetStreamer {
+    chunk_size: usize,
+}
+
+impl ResultSetStreamer {
+    pub async fn stream_results(
+        &self,
+        query: &str,
+        conn: &mut dyn Connection
+    ) -> impl Stream<Item = Result<Vec<Row>>> {
+        async_stream::try_stream! {
+            let mut cursor = conn.execute_cursor(query).await?;
+
+            loop {
+                let chunk = cursor.fetch_many(self.chunk_size).await?;
+                if chunk.is_empty() {
+                    break;
+                }
+                yield chunk;
+            }
+        }
+    }
+}
+```
+
+---
+
+## 9. Testing Strategy
+
+### 9.1 Test Pyramid
+
+```
+        /\
+       /  \      E2E Tests (5%)
+      /    \     - Full workflows
+     /------\    - CLI integration
+    /        \   - Cross-platform
+   /----------\
+  / Integration \ Integration Tests (25%)
+ /    Tests      \ - Backend testing
+/________________\ - REPL simulation
+    Unit Tests      Unit Tests (70%)
+                    - Parser
+                    - Core logic
+                    - Form validation
+```
+
+### 9.2 Unit Tests
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parameter_extraction() {
+        let query = "SELECT * FROM users WHERE id = $1 AND name = :name";
+        let params = extract_parameters(query);
+
+        assert_eq!(params.len(), 2);
+        assert!(matches!(params[0], Parameter::Positional(1)));
+        assert!(matches!(params[1], Parameter::Named(ref n) if n == "name"));
+    }
+
+    #[test]
+    fn test_value_coercion() {
+        let value = Value::Integer(42);
+        let coerced = value.coerce_to(ValueType::Float).unwrap();
+
+        assert!(matches!(coerced, Value::Float(f) if f == 42.0));
+    }
+
+    #[tokio::test]
+    async fn test_query_execution() {
+        let mut executor = Executor::new_with_memory_backend();
+
+        let result = executor.execute("SELECT 1 as num").await.unwrap();
+
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].get("num"), Some(&Value::Integer(1)));
+    }
+}
+```
+
+### 9.3 Integration Tests
+
+```rust
+#[tokio::test]
+async fn test_full_workflow() {
+    // Setup test database
+    let db_path = tempfile::NamedTempFile::new().unwrap();
+    let backend = SqliteBackend::new(db_path.path()).await.unwrap();
+    let mut executor = Executor::new(backend);
+
+    // Create table
+    executor.execute("
+        CREATE TABLE users (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            email TEXT UNIQUE
+        )
+    ").await.unwrap();
+
+    // Insert data
+    executor.execute_with_params(
+        "INSERT INTO users (id, name, email) VALUES ($1, $2, $3)",
+        vec![
+            Value::Integer(1),
+            Value::Text("Alice".into()),
+            Value::Text("alice@example.com".into()),
+        ]
+    ).await.unwrap();
+
+    // Query data
+    let result = executor.execute(
+        "SELECT * FROM users WHERE name = 'Alice'"
+    ).await.unwrap();
+
+    assert_eq!(result.rows.len(), 1);
+    assert_eq!(result.rows[0].get("email"),
+               Some(&Value::Text("alice@example.com".into())));
+}
+```
+
+### 9.4 Property-Based Testing
+
+```rust
+use proptest::prelude::*;
+
+proptest! {
+    #[test]
+    fn test_value_roundtrip(value in any::<Value>()) {
+        let serialized = value.to_sql();
+        let deserialized = Value::from_sql(&serialized)?;
+        prop_assert_eq!(value, deserialized);
+    }
+
+    #[test]
+    fn test_parameter_parsing(
+        query in "[A-Z ]+ WHERE [a-z]+ = (\\$[0-9]+|:[a-z]+)"
+    ) {
+        let params = extract_parameters(&query);
+        prop_assert!(!params.is_empty());
+    }
+}
+```
+
+### 9.5 Benchmark Tests
+
+```rust
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+
+fn benchmark_query_parsing(c: &mut Criterion) {
+    let query = "SELECT * FROM users WHERE id = $1 AND name = :name";
+
+    c.bench_function("parse_query", |b| {
+        b.iter(|| {
+            let parser = RqlParser::new();
+            parser.parse(black_box(query))
+        });
+    });
+}
+
+fn benchmark_result_formatting(c: &mut Criterion) {
+    let result = create_sample_result_set(1000);
+
+    c.bench_function("format_table", |b| {
+        b.iter(|| {
+            format_as_table(black_box(&result))
+        });
+    });
+}
+
+criterion_group!(benches, benchmark_query_parsing, benchmark_result_formatting);
+criterion_main!(benches);
+```
+
+---
+
+## 10. Deployment & Operations
+
+### 10.1 Installation
+
+**From Source:**
+```bash
+git clone https://github.com/noctra/noctra.git
+cd noctra
+cargo build --release
+cargo install --path crates/noctra-cli
+```
+
+**Pre-built Binaries:**
+```bash
+# Linux
+curl -LO https://github.com/noctra/noctra/releases/latest/download/noctra-linux-x64.tar.gz
+tar xzf noctra-linux-x64.tar.gz
+sudo mv noctra /usr/local/bin/
+
+# macOS
+brew install noctra
+
+# Windows
+choco install noctra
+```
+
+### 10.2 Configuration
+
+**Config File Location:**
+- Linux/macOS: `~/.config/noctra/config.toml`
+- Windows: `%APPDATA%\Noctra\config.toml`
+
+**Example Configuration:**
+
+```toml
+[general]
+theme = "classic"          # classic, modern, custom
+log_level = "info"         # error, warn, info, debug, trace
+history_file = "~/.noctra_history"
+history_size = 10000
+
+[database]
+default_backend = "sqlite"
+connection_timeout = 30    # seconds
+query_timeout = 300        # seconds
+max_rows = 10000
+
+[database.sqlite]
+default_path = "./noctra.db"
+wal_mode = true
+
+[database.postgresql]
+host = "localhost"
+port = 5432
+# username and password via env vars
+
+[ui]
+color_scheme = "classic"
+table_style = "unicode"    # unicode, ascii
+pager_enabled = true
+confirm_exit = true
+
+[security]
+allowed_output_dirs = ["/tmp", "~/noctra-output"]
+max_query_length = 1000000
+```
+
+### 10.3 Environment Variables
+
+```bash
+# Database connection
+export NOCTRA_DB_TYPE=postgresql
+export NOCTRA_DB_HOST=localhost
+export NOCTRA_DB_PORT=5432
+export NOCTRA_DB_NAME=mydb
+export NOCTRA_DB_USER=admin
+export NOCTRA_DB_PASSWORD=secret
+
+# Behavior
+export NOCTRA_THEME=classic
+export NOCTRA_LOG_LEVEL=debug
+export NOCTRA_CONFIG_FILE=/etc/noctra/config.toml
+
+# Security
+export NOCTRA_MAX_ROWS=5000
+export NOCTRA_QUERY_TIMEOUT=60
+```
+
+### 10.4 Daemon Mode (noctrad)
+
+**Start Daemon:**
+```bash
+noctrad \
+    --bind 0.0.0.0:7100 \
+    --db sqlite:///var/lib/noctra/data.db \
+    --auth-token-file /etc/noctra/token \
+    --log-file /var/log/noctrad.log \
+    --daemonize
+```
+
+**Systemd Service:**
+```ini
+[Unit]
+Description=Noctra Database Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=noctra
+Group=noctra
+ExecStart=/usr/local/bin/noctrad --config /etc/noctra/noctrad.conf
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**API Usage:**
+```bash
+# Execute query
+curl -X POST http://localhost:7100/api/execute \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "sql": "SELECT * FROM users WHERE id = $1",
+      "params": [42]
+    }'
+
+# Load form
+curl -X POST http://localhost:7100/api/form/load \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "form_path": "forms/users.toml",
+      "values": {"dept": "SALES"}
+    }'
+```
+
+### 10.5 Monitoring & Observability
+
+**Metrics Export:**
+```rust
+pub struct Metrics {
+    queries_executed: Counter,
+    query_duration: Histogram,
+    active_connections: Gauge,
+    errors_total: Counter,
+}
+
+impl Executor {
+    pub async fn execute_with_metrics(
+        &mut self,
+        query: &str
+    ) -> Result<ResultSet> {
+        let start = Instant::now();
+        self.metrics.queries_executed.inc();
+
+        let result = self.execute(query).await;
+
+        self.metrics.query_duration.observe(start.elapsed().as_secs_f64());
+
+        if result.is_err() {
+            self.metrics.errors_total.inc();
+        }
+
+        result
+    }
+}
+```
+
+**Health Check Endpoint:**
+```rust
+async fn health_check(State(executor): State<Arc<Executor>>) -> impl IntoResponse {
+    let health = Health {
+        status: "healthy",
+        database: executor.check_connection().await.is_ok(),
+        uptime: get_uptime(),
+        version: env!("CARGO_PKG_VERSION"),
+    };
+
+    Json(health)
+}
+```
+
+### 10.6 Backup & Recovery
+
+**Automated Backup:**
+```bash
+#!/bin/bash
+# backup-noctra.sh
+
+BACKUP_DIR="/var/backups/noctra"
+DATE=$(date +%Y%m%d_%H%M%S)
+
+# Backup SQLite database
+sqlite3 /var/lib/noctra/data.db ".backup $BACKUP_DIR/noctra_$DATE.db"
+
+# Compress old backups
+find $BACKUP_DIR -name "*.db" -mtime +7 -exec gzip {} \;
+
+# Remove very old backups
+find $BACKUP_DIR -name "*.db.gz" -mtime +30 -delete
+```
+
+**Restore:**
+```bash
+# Stop daemon
+sudo systemctl stop noctrad
+
+# Restore database
+cp /var/backups/noctra/noctra_20250105_120000.db /var/lib/noctra/data.db
+
+# Start daemon
+sudo systemctl start noctrad
+```
+
+---
+
+## Appendix A: API Reference
+
+Complete API documentation is available at `docs/API-REFERENCE.md`.
+
+## Appendix B: Migration Guide
+
+Migration guide from other systems is available at `docs/MIGRATION.md`.
+
+## Appendix C: Contributing
+
+Contribution guidelines are available in `CONTRIBUTING.md`.
+
+---
+
+**Document Version:** 1.0
+**Last Updated:** 2025-01-05
+**Status:** Complete
+**Authors:** Noctra Development Team

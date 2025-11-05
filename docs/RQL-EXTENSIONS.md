@@ -1,5 +1,13 @@
 # RQL (Extended SQL) - Especificación Completa
 
+## 📚 Documentación Relacionada
+
+- **[Getting Started](GETTING_STARTED.md)** - Aprende RQL con ejemplos prácticos
+- **[Design Document](DESIGN.md)** - Sección 4: Arquitectura del lenguaje RQL
+- **[FDL2 Specification](FDL2-SPEC.md)** - Sintaxis de templates usada en formularios
+- **[API Reference](API-REFERENCE.md)** - API del parser RQL
+- **[Roadmap](ROADMAP.md)** - Milestone 3: Features avanzadas de RQL
+
 ## Introducción
 
 RQL (Extended SQL) es el lenguaje de consultas de Noctra que extiende SQL estándar con características específicas para parámetros, variables de sesión y comandos especiales. Combina la potencia de sqlparser con extensiones modernas para consultas interactivas.
