@@ -1,8 +1,9 @@
 //! REPL (Read-Eval-Print Loop) para Noctra
 
 use std::io::{self, Write};
-use crate::config::{CliConfig, ReplArgs};
-use crate::error::{NoctraError, Result};
+use crate::config::CliConfig;
+use noctra_core::NoctraError;
+type Result<T> = std::result::Result<T, NoctraError>;
 
 /// Handler del REPL
 #[derive(Debug)]

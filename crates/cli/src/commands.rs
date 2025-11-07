@@ -9,8 +9,8 @@ use tokio;
 use serde_json;
 
 use crate::config::CliConfig;
-use crate::error::Result;
-use noctra_core::{Session, ResultSet, Executor};
+use noctra_core::{Session, ResultSet, Executor, NoctraError};
+type Result<T> = std::result::Result<T, NoctraError>;
 use noctra_parser::{RqlParser, RqlAst};
 use noctra_formlib::{load_form_from_path, FormExecutionContext};
 use noctra_tui::{FormComponent, TuiApp, TuiConfig};
@@ -81,7 +81,7 @@ impl CommandResult {
 
 /// Ejecutor de comandos principal
 pub struct CommandExecutor {
-    context: CommandContext,
+    pub context: CommandContext,
 }
 
 impl CommandExecutor {

@@ -9,5 +9,5 @@ pub mod renderer;
 pub mod layout;
 
 pub use components::*;
-pub use renderer::TuiRenderer;
+pub use renderer::{TuiRenderer, TuiApp, TuiConfig, TuiConfigBuilder};
 pub use layout::LayoutManager;

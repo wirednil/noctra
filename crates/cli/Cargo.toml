@@ -33,6 +33,11 @@ thiserror = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
 
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+toml = "0.8"
+
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio-test = { workspace = true }
