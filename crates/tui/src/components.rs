@@ -3,7 +3,7 @@
 //! Componentes reutilizables para formularios, tablas y navegación
 //! en la interfaz de usuario terminal.
 
-use noctra_core::{ResultSet, Value};
+use noctra_core::{ResultSet, Value, Row};
 use noctra_formlib::{Form, FormField};
 use std::collections::HashMap;
 
@@ -411,7 +411,8 @@ impl Component for FormComponent {
         // Campos del formulario
         for (field_name, field) in &self.form.fields {
             let is_active = self.active_field.as_ref() == Some(field_name);
-            let value = self.field_values.get(field_name).unwrap_or(&"".to_string());
+            let empty_string = String::new();
+            let value = self.field_values.get(field_name).unwrap_or(&empty_string);
             
             // Label del campo
             let label = format!("{}:", field.label);

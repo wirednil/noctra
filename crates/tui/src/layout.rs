@@ -373,7 +373,7 @@ impl LayoutManager {
     }
     
     /// Aplicar layout horizontal
-    fn apply_horizontal_layout(&mut self, spacing: usize, padding: &usize, fixed_widths: &HashMap<String, usize>) {
+    fn apply_horizontal_layout(&mut self, spacing: usize, padding: usize, fixed_widths: &HashMap<String, usize>) {
         let mut current_x = self.total_area.position.x + padding;
         let available_height = self.total_area.size.height.saturating_sub(padding * 2);
         

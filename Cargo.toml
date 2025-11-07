@@ -4,7 +4,7 @@ members = [
     "crates/parser",
     "crates/cli",
     "crates/tui",
-    "crates/srv",
+    # "crates/srv",  # TODO: Habilitar en Milestone 4 (daemon noctrad)
     "crates/formlib",
     "crates/ffi"
 ]

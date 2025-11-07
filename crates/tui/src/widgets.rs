@@ -227,7 +227,7 @@ impl Button {
 impl Widget for Button {
     fn render(&self) -> String {
         let template = if self.focused { &self.style.focused_text } else { &self.style.normal_text };
-        format!(template, self.text)
+        template.replace("{}", &self.text)
     }
     
     fn get_size(&self) -> (usize, usize) {
@@ -416,12 +416,17 @@ impl Panel {
         self
     }
     
-    /// Agregar widget
+    /// Agregar widget (builder pattern)
     pub fn add_widget<T: Widget + 'static>(mut self, widget: T) -> Self {
         self.widgets.push(Box::new(widget));
         self
     }
-    
+
+    /// Agregar widget (mutable)
+    pub fn add_widget_mut<T: Widget + 'static>(&mut self, widget: T) {
+        self.widgets.push(Box::new(widget));
+    }
+
     /// Establecer widget enfocado
     pub fn set_focused_widget(&mut self, index: usize) {
         if index < self.widgets.len() {

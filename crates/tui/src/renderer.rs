@@ -216,17 +216,21 @@ impl TuiRenderer {
                 
                 match event::read()
                     .map_err(|e| TuiError::EventError(e.to_string()))? {
-                    
+
                     Event::Key(key_event) => {
                         self.handle_key_event(key_event);
                     }
-                    
+
                     Event::Mouse(mouse_event) => {
                         self.handle_mouse_event(mouse_event);
                     }
-                    
+
                     Event::Resize(width, height) => {
                         self.handle_resize(width, height);
+                    }
+
+                    Event::FocusGained | Event::FocusLost | Event::Paste(_) => {
+                        // Ignorar estos eventos por ahora
                     }
                 }
             }
@@ -370,7 +374,7 @@ impl TuiRenderer {
     
     /// Agregar widget al panel raíz
     pub fn add_widget<T: Widget + 'static>(&mut self, widget: T) {
-        self.root_panel.add_widget(widget);
+        self.root_panel.add_widget_mut(widget);
     }
     
     /// Obtener dimensiones actuales
@@ -411,7 +415,7 @@ impl TuiApp {
     }
     
     /// Ejecutar aplicación
-    pub fn run(&mut self) -> TuiResult<()> {
+    pub fn run(self) -> TuiResult<()> {
         self.renderer.run()
     }
     
