@@ -2,6 +2,7 @@
 
 use std::io::{self, Write};
 use crate::config::CliConfig;
+use crate::cli::ReplArgs;
 use noctra_core::NoctraError;
 type Result<T> = std::result::Result<T, NoctraError>;
 
