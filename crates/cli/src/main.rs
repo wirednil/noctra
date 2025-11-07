@@ -1,17 +1,17 @@
 //! Noctra CLI - Entry point principal integrado
-//! 
+//!
 //! Punto de entrada principal que integra todos los crates de Noctra:
 //! - core: Runtime y executor
-//! - parser: RQL parser 
+//! - parser: RQL parser
 //! - cli: Commands y REPL
 //! - formlib: Formularios FDL2
 //! - tui: Interface de usuario terminal
 
 use clap::Parser;
-use std::process::ExitCode;
 use log::error;
+use std::process::ExitCode;
 
-use noctra_cli::{NoctraArgs, build_app as build_cli};
+use noctra_cli::{build_app as build_cli, NoctraArgs};
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -20,13 +20,13 @@ async fn main() -> ExitCode {
 
     // Parse CLI arguments
     let args = NoctraArgs::parse();
-    
+
     // Build and run the application
     match build_cli(args).await {
         Ok(_) => {
             println!("👋 ¡Noctra finalizado correctamente!");
             ExitCode::from(0)
-        },
+        }
         Err(e) => {
             error!("❌ Error crítico: {}", e);
             error!("💡 Para ayuda, prueba: noctra --help");

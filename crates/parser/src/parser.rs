@@ -1,18 +1,18 @@
 //! Parser principal para RQL (Extended SQL)
 
+use crate::error::{ParserError, ParserResult};
+use crate::rql_ast::{
+    OutputDestination, OutputFormat, ParameterType, RqlAst, RqlParameter, RqlStatement,
+};
+use regex::Regex;
 use std::collections::HashMap;
 use std::time::Instant;
-use regex::Regex;
-use crate::error::{ParserResult, ParserError};
-use crate::rql_ast::{
-    RqlAst, RqlStatement, RqlParameter, ParameterType,
-    OutputDestination, OutputFormat
-};
 
 /// Parser principal para RQL
 #[derive(Debug, Clone)]
 pub struct RqlParser {
     /// Configuración del parser
+    #[allow(dead_code)]
     config: ParserConfig,
 }
 
@@ -23,31 +23,31 @@ impl RqlParser {
             config: ParserConfig::default(),
         }
     }
-    
+
     /// Crear parser con configuración específica
     pub fn with_config(config: ParserConfig) -> Self {
         Self { config }
     }
-    
+
     /// Parsear input RQL completo
     pub async fn parse_rql(&self, input: &str) -> ParserResult<RqlAst> {
         let start_time = Instant::now();
-        
+
         let mut ast = RqlAst::new();
-        
+
         // Dividir input en líneas para procesamiento
         let lines: Vec<&str> = input.lines().collect();
         ast.metadata.lines_processed = lines.len();
-        
+
         // Procesar cada línea
         for (line_num, line) in lines.iter().enumerate() {
             let trimmed_line = line.trim();
-            
+
             // Saltar líneas vacías y comentarios
             if trimmed_line.is_empty() || trimmed_line.starts_with("--") {
                 continue;
             }
-            
+
             // Parsear línea individual
             match self.parse_line(trimmed_line, line_num + 1) {
                 Ok(statement) => {
@@ -59,22 +59,22 @@ impl RqlParser {
                     return Err(ParserError::syntax_error(
                         line_num + 1,
                         1,
-                        format!("Failed to parse line: {}", e)
+                        format!("Failed to parse line: {}", e),
                     ));
                 }
             }
         }
-        
+
         // Actualizar metadatos
         ast.metadata.parsing_time_us = start_time.elapsed().as_micros() as u64;
-        
+
         Ok(ast)
     }
-    
+
     /// Parsear línea individual
     fn parse_line(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
         let upper_line = line.to_uppercase();
-        
+
         // Detectar comandos RQL
         if upper_line.starts_with("USE ") {
             self.parse_use_command(line, line_num)
@@ -91,59 +91,78 @@ impl RqlParser {
             self.parse_sql_statement(line, line_num)
         }
     }
-    
+
     /// Parsear comando USE
     fn parse_use_command(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 2 {
-            return Err(ParserError::syntax_error(line_num, 1, "USE command requires schema name"));
+            return Err(ParserError::syntax_error(
+                line_num,
+                1,
+                "USE command requires schema name",
+            ));
         }
-        
+
         let schema = parts[1].to_string();
         Ok(RqlStatement::Use { schema })
     }
-    
+
     /// Parsear comando LET
     fn parse_let_command(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
         let parts: Vec<&str> = line.splitn(3, ' ').collect();
         if parts.len() < 3 {
-            return Err(ParserError::syntax_error(line_num, 1, "LET command requires variable and expression"));
+            return Err(ParserError::syntax_error(
+                line_num,
+                1,
+                "LET command requires variable and expression",
+            ));
         }
-        
+
         let variable = parts[1].to_string();
         let expression = parts[2].to_string();
-        Ok(RqlStatement::Let { variable, expression })
+        Ok(RqlStatement::Let {
+            variable,
+            expression,
+        })
     }
-    
+
     /// Parsear comando FORM LOAD
     fn parse_form_load_command(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 2 {
-            return Err(ParserError::syntax_error(line_num, 1, "FORM LOAD command requires file path"));
+            return Err(ParserError::syntax_error(
+                line_num,
+                1,
+                "FORM LOAD command requires file path",
+            ));
         }
-        
+
         let form_path = parts[1].to_string();
         Ok(RqlStatement::FormLoad { form_path })
     }
-    
+
     /// Parsear comando EXECFORM
     fn parse_exec_form_command(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 2 {
-            return Err(ParserError::syntax_error(line_num, 1, "EXECFORM command requires file path"));
+            return Err(ParserError::syntax_error(
+                line_num,
+                1,
+                "EXECFORM command requires file path",
+            ));
         }
-        
+
         let form_path = parts[1].to_string();
-        Ok(RqlStatement::ExecForm { 
-            form_path, 
-            parameters: HashMap::new() 
+        Ok(RqlStatement::ExecForm {
+            form_path,
+            parameters: HashMap::new(),
         })
     }
-    
+
     /// Parsear comando OUTPUT TO
     fn parse_output_to_command(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
         let upper_line = line.to_uppercase();
-        
+
         // Detectar formato
         let format = if upper_line.contains("FORMAT CSV") {
             OutputFormat::Csv
@@ -154,7 +173,7 @@ impl RqlParser {
         } else {
             OutputFormat::Table
         };
-        
+
         // Detectar destino
         let destination = if upper_line.contains("STDOUT") {
             OutputDestination::Stdout
@@ -166,13 +185,20 @@ impl RqlParser {
             if parts.len() >= 2 {
                 OutputDestination::File(parts[1].to_string())
             } else {
-                return Err(ParserError::syntax_error(line_num, 1, "OUTPUT TO requires destination"));
+                return Err(ParserError::syntax_error(
+                    line_num,
+                    1,
+                    "OUTPUT TO requires destination",
+                ));
             }
         };
-        
-        Ok(RqlStatement::OutputTo { destination, format })
+
+        Ok(RqlStatement::OutputTo {
+            destination,
+            format,
+        })
     }
-    
+
     /// Parsear statement SQL
     fn parse_sql_statement(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
         // Validar que es SQL válido usando sqlparser
@@ -181,25 +207,34 @@ impl RqlParser {
             .map_err(|e| ParserError::SqlParserError(e.to_string()))?
             .parse_statements()
             .map_err(|e| ParserError::SqlParserError(e.to_string()))?;
-            
+
         if sql_ast.is_empty() {
-            return Err(ParserError::syntax_error(line_num, 1, "Invalid SQL statement"));
+            return Err(ParserError::syntax_error(
+                line_num,
+                1,
+                "Invalid SQL statement",
+            ));
         }
-        
+
         Ok(RqlStatement::Sql {
             sql: line.to_string(),
             parameters: HashMap::new(),
         })
     }
-    
+
     /// Extraer parámetros de una línea
-    fn extract_parameters(&self, line: &str, line_num: usize, ast: &mut RqlAst) -> ParserResult<()> {
+    fn extract_parameters(
+        &self,
+        line: &str,
+        line_num: usize,
+        ast: &mut RqlAst,
+    ) -> ParserResult<()> {
         // Parámetros posicionados: $1, $2, etc.
         let positional_regex = Regex::new(r"\$(\d+)").unwrap();
         for cap in positional_regex.captures_iter(line) {
             let param_name = cap[0].to_string();
             let position = cap[1].parse::<usize>().unwrap_or(0);
-            
+
             let parameter = RqlParameter {
                 name: param_name.clone(),
                 param_type: ParameterType::Positional,
@@ -209,12 +244,12 @@ impl RqlParser {
             };
             ast.add_parameter(parameter);
         }
-        
+
         // Parámetros nombrados: :name
         let named_regex = Regex::new(r":([a-zA-Z_][a-zA-Z0-9_]*)").unwrap();
         for cap in named_regex.captures_iter(line) {
             let param_name = format!(":{}", &cap[1]);
-            
+
             let parameter = RqlParameter {
                 name: param_name,
                 param_type: ParameterType::Named,
@@ -224,28 +259,29 @@ impl RqlParser {
             };
             ast.add_parameter(parameter);
         }
-        
+
         // Variables de sesión: #variable
         let session_var_regex = Regex::new(r"#([a-zA-Z_][a-zA-Z0-9_]*)").unwrap();
         for cap in session_var_regex.captures_iter(line) {
             ast.add_session_variable(cap[1].to_string());
         }
-        
+
         Ok(())
     }
-    
+
     /// Extraer parámetros de query SQL usando sqlparser
     pub fn extract_sql_parameters(&self, sql: &str) -> ParserResult<Vec<RqlParameter>> {
         let mut parameters = Vec::new();
-        
+
         // Parsear SQL con sqlparser
         let mut parser = sqlparser::parser::Parser::new(&sqlparser::dialect::GenericDialect {})
             .try_with_sql(sql)
             .map_err(|e| ParserError::SqlParserError(e.to_string()))?;
-            
-        let sql_ast = parser.parse_statements()
+
+        let sql_ast = parser
+            .parse_statements()
             .map_err(|e| ParserError::SqlParserError(e.to_string()))?;
-            
+
         if let Some(_statement) = sql_ast.first() {
             // Por ahora, usamos regex como fallback
             // En implementación futura, usar visitor pattern de sqlparser
@@ -259,7 +295,7 @@ impl RqlParser {
                     column: sql.find(&cap[0]).unwrap_or(0) + 1,
                 });
             }
-            
+
             let named_params_regex = Regex::new(r":([a-zA-Z_][a-zA-Z0-9_]*)").unwrap();
             for cap in named_params_regex.captures_iter(sql) {
                 parameters.push(RqlParameter {
@@ -271,7 +307,7 @@ impl RqlParser {
                 });
             }
         }
-        
+
         Ok(parameters)
     }
 }
@@ -281,13 +317,13 @@ impl RqlParser {
 pub struct ParserConfig {
     /// Modo estricto (más validaciones)
     pub strict_mode: bool,
-    
+
     /// Permitir comandos RQL extendidos
     pub allow_extended_commands: bool,
-    
+
     /// Tiempo máximo de parsing
     pub max_parsing_time_ms: u64,
-    
+
     /// Límite de caracteres por línea
     pub max_line_length: usize,
 }
@@ -313,7 +349,14 @@ impl Default for RqlParser {
 #[derive(Debug)]
 pub struct RqlProcessor {
     parser: RqlParser,
+    #[allow(dead_code)]
     template_processor: TemplateProcessor,
+}
+
+impl Default for RqlProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RqlProcessor {
@@ -324,49 +367,49 @@ impl RqlProcessor {
             template_processor: TemplateProcessor::new(),
         }
     }
-    
+
     /// Procesar input RQL completo
     pub async fn process(&self, input: &str) -> ParserResult<RqlAst> {
         let mut ast = self.parser.parse_rql(input).await?;
-        
+
         // Post-procesar AST
         self.post_process_ast(&mut ast)?;
-        
+
         Ok(ast)
     }
-    
+
     /// Post-procesar AST (validaciones, optimizaciones)
     fn post_process_ast(&self, ast: &mut RqlAst) -> ParserResult<()> {
         // Validar parámetros duplicados
         self.validate_duplicate_parameters(ast)?;
-        
+
         // Optimizar statements
         self.optimize_statements(ast)?;
-        
+
         Ok(())
     }
-    
+
     /// Validar parámetros duplicados
     fn validate_duplicate_parameters(&self, ast: &mut RqlAst) -> ParserResult<()> {
         let mut param_names = std::collections::HashSet::new();
         let mut duplicates = Vec::new();
-        
+
         for param in &ast.parameters {
             if !param_names.insert(&param.name) {
                 duplicates.push(param.name.clone());
             }
         }
-        
+
         if !duplicates.is_empty() {
             ast.metadata.warnings.push(format!(
                 "Duplicate parameters found: {}",
                 duplicates.join(", ")
             ));
         }
-        
+
         Ok(())
     }
-    
+
     /// Optimizar statements
     fn optimize_statements(&self, ast: &mut RqlAst) -> ParserResult<()> {
         // Por ahora, solo logging
@@ -378,7 +421,14 @@ impl RqlProcessor {
 /// Procesador de templates simple
 #[derive(Debug, Clone)]
 pub struct TemplateProcessor {
+    #[allow(dead_code)]
     config: TemplateConfig,
+}
+
+impl Default for TemplateProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TemplateProcessor {
@@ -388,16 +438,16 @@ impl TemplateProcessor {
             config: TemplateConfig::default(),
         }
     }
-    
+
     /// Procesar template con variables
     pub fn process_template(&self, template: &str, variables: &HashMap<String, String>) -> String {
         let mut result = template.to_string();
-        
+
         for (key, value) in variables {
             let placeholder = format!("#{}", key);
             result = result.replace(&placeholder, value);
         }
-        
+
         result
     }
 }
@@ -407,10 +457,10 @@ impl TemplateProcessor {
 pub struct TemplateConfig {
     /// Delimitador de apertura
     pub open_delimiter: String,
-    
+
     /// Delimitador de cierre
     pub close_delimiter: String,
-    
+
     /// Permitir variables de sesión
     pub allow_session_variables: bool,
 }

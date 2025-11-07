@@ -1,24 +1,23 @@
 //! Executor principal y backends para Noctra
 
-use std::sync::Arc;
-use rusqlite::Rows;
-use std::collections::HashMap;
-use crate::error::{Result, NoctraError};
+use crate::error::{NoctraError, Result};
 use crate::session::Session;
-use crate::types::{ResultSet, Parameters, Value};
+use crate::types::{Parameters, ResultSet, Value};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Trait para backends de base de datos (dyn-compatible)
 pub trait Backend: Send + Sync + std::fmt::Debug {
     /// Ejecutar query SQL
     fn execute_query(&self, _sql: &str, _parameters: &Parameters) -> Result<ResultSet>;
-    
+
     /// Ejecutar statement SQL (INSERT/UPDATE/DELETE)
     fn execute_statement(&self, _sql: &str, _parameters: &Parameters) -> Result<ResultSet>;
-    
+
     /// Verificar conexión
     fn ping(&self) -> Result<()>;
-    
+
     /// Obtener información del backend
     fn backend_info(&self) -> BackendInfo;
 }
@@ -38,11 +37,12 @@ pub struct BackendInfo {
 pub struct SqliteBackend {
     /// Conexión a la base de datos
     conn: Arc<std::sync::Mutex<rusqlite::Connection>>,
-    
+
     /// URL de conexión
     url: String,
-    
+
     /// Configuración del backend
+    #[allow(dead_code)]
     config: SqliteConfig,
 }
 
@@ -65,7 +65,7 @@ impl SqliteConfig {
             cache_size: -2000, // 2MB
         }
     }
-    
+
     /// Crear configuración por defecto para base de datos en memoria
     pub fn for_memory() -> Self {
         Self {
@@ -82,19 +82,20 @@ impl SqliteBackend {
     /// Crear nuevo backend SQLite
     pub fn new(config: SqliteConfig) -> Self {
         Self {
-            conn: Arc::new(std::sync::Mutex::new(rusqlite::Connection::open_in_memory().unwrap_or_else(|_| {
-                panic!("Failed to create in-memory SQLite database")
-            }))),
+            conn: Arc::new(std::sync::Mutex::new(
+                rusqlite::Connection::open_in_memory()
+                    .unwrap_or_else(|_| panic!("Failed to create in-memory SQLite database")),
+            )),
             url: config.url.clone(),
             config,
         }
     }
-    
+
     /// Crear backend para archivo específico
     pub fn with_file<T: Into<String>>(filename: T) -> Result<Self> {
         let config = SqliteConfig::for_file(filename);
-        let conn = rusqlite::Connection::open(&config.url.trim_start_matches("sqlite://"))?;
-        
+        let conn = rusqlite::Connection::open(config.url.trim_start_matches("sqlite://"))?;
+
         Ok(Self {
             conn: Arc::new(std::sync::Mutex::new(conn)),
             url: config.url.clone(),
@@ -106,42 +107,54 @@ impl SqliteBackend {
 #[cfg(feature = "sqlite")]
 impl Backend for SqliteBackend {
     fn execute_query(&self, sql: &str, parameters: &Parameters) -> Result<ResultSet> {
-        let conn = self.conn.lock().map_err(|_| {
-            NoctraError::database("Cannot access SQLite connection".to_string())
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| NoctraError::database("Cannot access SQLite connection".to_string()))?;
+
+        let mut stmt = conn.prepare(sql).map_err(|e| {
+            NoctraError::sql_execution(format!("Failed to prepare statement: {}", e))
         })?;
-        
-        let mut stmt = conn.prepare(sql)
-            .map_err(|e| NoctraError::sql_execution(format!("Failed to prepare statement: {}", e)))?;
-            
+
         let columns: Vec<String> = stmt.column_names().into_iter().map(String::from).collect();
-        
+
         let mut result_set = ResultSet::new(
-            columns.iter().enumerate().map(|(i, name)| {
-                crate::types::Column {
-                    name: name.clone(),
-                    data_type: "TEXT".to_string(), // Default type
-                    ordinal: i,
-                }
-            }).collect()
+            columns
+                .iter()
+                .enumerate()
+                .map(|(i, name)| {
+                    crate::types::Column {
+                        name: name.clone(),
+                        data_type: "TEXT".to_string(), // Default type
+                        ordinal: i,
+                    }
+                })
+                .collect(),
         );
-        
+
         let sqlite_params = map_parameters_to_sqlite(parameters)?;
-        let params: Vec<&dyn rusqlite::ToSql> = sqlite_params.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+        let params: Vec<&dyn rusqlite::ToSql> = sqlite_params
+            .iter()
+            .map(|v| v as &dyn rusqlite::ToSql)
+            .collect();
 
         let mut rows = if parameters.is_empty() {
-            stmt.query(())
-                .map_err(|e| NoctraError::sql_execution(format!("Failed to execute query: {}", e)))?
+            stmt.query(()).map_err(|e| {
+                NoctraError::sql_execution(format!("Failed to execute query: {}", e))
+            })?
         } else {
-            stmt.query(&*params)
-                .map_err(|e| NoctraError::sql_execution(format!("Failed to execute query: {}", e)))?
+            stmt.query(&*params).map_err(|e| {
+                NoctraError::sql_execution(format!("Failed to execute query: {}", e))
+            })?
         };
 
         while let Ok(Some(row)) = rows.next() {
             let mut values = Vec::new();
             for i in 0..columns.len() {
                 let value_ref = row.get_ref(i).unwrap_or(rusqlite::types::ValueRef::Null);
-                let value = map_sqlite_value_to_noctra(value_ref)
-                    .map_err(|e| NoctraError::sql_execution(format!("Failed to map value: {}", e)))?;
+                let value = map_sqlite_value_to_noctra(value_ref).map_err(|e| {
+                    NoctraError::sql_execution(format!("Failed to map value: {}", e))
+                })?;
                 values.push(value);
             }
             result_set.add_row(crate::types::Row { values });
@@ -149,14 +162,18 @@ impl Backend for SqliteBackend {
 
         Ok(result_set)
     }
-    
+
     fn execute_statement(&self, sql: &str, parameters: &Parameters) -> Result<ResultSet> {
-        let conn = self.conn.lock().map_err(|_| {
-            NoctraError::database("Cannot access SQLite connection".to_string())
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| NoctraError::database("Cannot access SQLite connection".to_string()))?;
 
         let sqlite_params = map_parameters_to_sqlite(parameters)?;
-        let params: Vec<&dyn rusqlite::ToSql> = sqlite_params.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+        let params: Vec<&dyn rusqlite::ToSql> = sqlite_params
+            .iter()
+            .map(|v| v as &dyn rusqlite::ToSql)
+            .collect();
 
         let result = if parameters.is_empty() {
             conn.execute(sql, ())
@@ -177,21 +194,24 @@ impl Backend for SqliteBackend {
 
                 Ok(result_set)
             }
-            Err(e) => Err(NoctraError::sql_execution(format!("Failed to execute statement: {}", e)))
+            Err(e) => Err(NoctraError::sql_execution(format!(
+                "Failed to execute statement: {}",
+                e
+            ))),
         }
     }
-    
+
     fn ping(&self) -> Result<()> {
-        let conn = self.conn.lock().map_err(|_| {
-            NoctraError::database("Cannot access SQLite connection".to_string())
-        })?;
-        
-        conn.execute("SELECT 1", ()).map_err(|e| {
-            NoctraError::database(format!("Failed to ping SQLite: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| NoctraError::database("Cannot access SQLite connection".to_string()))?;
+
+        conn.execute("SELECT 1", ())
+            .map_err(|e| NoctraError::database(format!("Failed to ping SQLite: {}", e)))?;
         Ok(())
     }
-    
+
     fn backend_info(&self) -> BackendInfo {
         BackendInfo {
             name: "SQLite".to_string(),
@@ -212,7 +232,7 @@ impl Backend for SqliteBackend {
 pub struct Executor {
     /// Backend subyacente
     backend: Arc<dyn Backend>,
-    
+
     /// Configuración del executor
     config: ExecutorConfig,
 }
@@ -225,7 +245,7 @@ impl Executor {
             config: ExecutorConfig::default(),
         }
     }
-    
+
     /// Crear executor SQLite en memoria
     #[cfg(feature = "sqlite")]
     pub fn new_sqlite_memory() -> Result<Self> {
@@ -233,65 +253,66 @@ impl Executor {
         let backend = SqliteBackend::new(config);
         Ok(Self::new(Arc::new(backend)))
     }
-    
+
     /// Crear executor SQLite con archivo
     #[cfg(feature = "sqlite")]
     pub fn new_sqlite_file<T: Into<String>>(filename: T) -> Result<Self> {
         let backend = SqliteBackend::with_file(filename)?;
         Ok(Self::new(Arc::new(backend)))
     }
-    
+
     /// Conectar al backend
     pub fn connect(&mut self) -> Result<()> {
         Ok(()) // No connection needed for sync backends
     }
-    
+
     /// Desconectar del backend
     pub fn disconnect(&mut self) -> Result<()> {
         Ok(()) // No disconnection needed for sync backends
     }
-    
+
     /// Ping al backend
     pub fn ping(&self) -> Result<()> {
         self.backend.ping()
     }
-    
+
     /// Ejecutar query RQL (parseado)
     pub fn execute_rql(&self, session: &Session, rql_query: RqlQuery) -> Result<ResultSet> {
         let sql = self.process_templates(&rql_query.sql, session)?;
         self.backend.execute_query(&sql, &rql_query.parameters)
     }
-    
+
     /// Ejecutar query SQL directo
     pub fn execute_sql(&self, session: &Session, sql: &str) -> Result<ResultSet> {
         self.backend.execute_query(sql, session.list_parameters())
     }
-    
+
     /// Ejecutar statement SQL directo
     pub fn execute_statement(&self, session: &Session, sql: &str) -> Result<ResultSet> {
-        self.backend.execute_statement(sql, session.list_parameters())
+        self.backend
+            .execute_statement(sql, session.list_parameters())
     }
-    
+
     /// Obtener información del backend
     pub fn backend_info(&self) -> BackendInfo {
         self.backend.backend_info()
     }
-    
+
     /// Configuración del executor
     pub fn config(&self) -> &ExecutorConfig {
         &self.config
     }
-    
+
     /// Procesar templates en SQL con variables de sesión
     fn process_templates(&self, sql: &str, session: &Session) -> Result<String> {
         let mut processed_sql = sql.to_string();
-        
+
         // Reemplazar variables de sesión
         for (name, value) in session.list_variables() {
             let placeholder = format!("#{}", name);
             processed_sql = processed_sql.replace(&placeholder, &value.to_string());
         }
-        
+
         Ok(processed_sql)
     }
 }
@@ -301,13 +322,13 @@ impl Executor {
 pub struct ExecutorConfig {
     /// Timeout de query en segundos
     pub query_timeout: u64,
-    
+
     /// Límite de filas
     pub row_limit: Option<usize>,
-    
+
     /// Modo debug
     pub debug_mode: bool,
-    
+
     /// Auto-escapar parámetros
     pub auto_escape: bool,
 }
@@ -328,7 +349,7 @@ impl Default for ExecutorConfig {
 pub struct RqlQuery {
     /// SQL procesado
     pub sql: String,
-    
+
     /// Parámetros
     pub parameters: Parameters,
 }
@@ -341,7 +362,7 @@ impl RqlQuery {
             parameters,
         }
     }
-    
+
     /// Crear query SQL simple
     pub fn sql<T: Into<String>>(sql: T) -> Self {
         Self {
@@ -356,7 +377,7 @@ impl RqlQuery {
 fn map_parameters_to_sqlite(parameters: &Parameters) -> Result<Vec<rusqlite::types::Value>> {
     let mut sqlite_params = Vec::new();
 
-    for (_, value) in parameters {
+    for value in parameters.values() {
         let param = match value {
             Value::Null => rusqlite::types::Value::Null,
             Value::Integer(i) => rusqlite::types::Value::Integer(*i),
@@ -378,7 +399,7 @@ fn map_sqlite_value_to_noctra(value: rusqlite::types::ValueRef<'_>) -> Result<Va
         rusqlite::types::ValueRef::Text(s) => {
             let text = std::str::from_utf8(s).unwrap_or("");
             Ok(Value::Text(text.to_string()))
-        },
+        }
         rusqlite::types::ValueRef::Blob(b) => Ok(Value::Text(format!("Blob({} bytes)", b.len()))),
         rusqlite::types::ValueRef::Real(f) => Ok(Value::Float(f)),
     }

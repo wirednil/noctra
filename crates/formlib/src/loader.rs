@@ -1,15 +1,15 @@
 //! Loader de formularios FDL2
-//! 
+//!
 //! Módulo para cargar formularios desde archivos TOML/JSON,
 //! procesar configuraciones y preparar formularios para ejecución.
 
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::forms::{Form, FormField, FieldType, FormAction, ActionType, ParamType};
+use crate::forms::{ActionType, FieldType, Form, FormAction, FormField, ParamType};
 
 /// Error de carga de formulario
 #[derive(Error, Debug)]
@@ -17,15 +17,15 @@ pub enum LoadError {
     /// Archivo no encontrado
     #[error("Archivo no encontrado: {0}")]
     FileNotFound(String),
-    
+
     /// Error de parseo de TOML/JSON
     #[error("Error de parseo en {0}: {1}")]
     ParseError(String, String),
-    
+
     /// Error de validación de esquema
     #[error("Error de validación: {0}")]
     ValidationError(String),
-    
+
     /// Error de IO
     #[error("Error de IO: {0}")]
     IoError(String),
@@ -39,13 +39,13 @@ pub type LoadResult<T> = Result<T, LoadError>;
 pub struct LoaderConfig {
     /// Directorio base de formularios
     pub base_path: Option<String>,
-    
+
     /// Extensiones soportadas
     pub supported_extensions: Vec<String>,
-    
+
     /// Validación estricta de esquemas
     pub strict_validation: bool,
-    
+
     /// Auto-detectar tipos de campos
     pub auto_detect_types: bool,
 }
@@ -71,72 +71,73 @@ impl FormLoader {
     pub fn new(config: LoaderConfig) -> Self {
         Self { config }
     }
-    
+
     /// Crear loader con configuración por defecto
     pub fn default() -> Self {
         Self::new(LoaderConfig::default())
     }
-    
+
     /// Cargar formulario desde path
     pub fn load_from_path(&self, path: &Path) -> LoadResult<Form> {
         let path_str = path.to_string_lossy().to_string();
-        
+
         if !path.exists() {
             return Err(LoadError::FileNotFound(path_str));
         }
-        
-        let content = fs::read_to_string(path)
-            .map_err(|e| LoadError::IoError(e.to_string()))?;
-        
+
+        let content = fs::read_to_string(path).map_err(|e| LoadError::IoError(e.to_string()))?;
+
         self.load_from_string(&content, &path_str)
     }
-    
+
     /// Cargar formulario desde string (TOML/JSON)
     pub fn load_from_string(&self, content: &str, source: &str) -> LoadResult<Form> {
         let extension = Path::new(source)
             .extension()
             .and_then(|ext| ext.to_str())
             .unwrap_or("");
-        
+
         match extension {
             "toml" => self.load_from_toml(content, source),
             "json" => self.load_from_json(content, source),
-            _ => Err(LoadError::ParseError(source.to_string(), 
-                "Formato no soportado. Use TOML o JSON".to_string()))
+            _ => Err(LoadError::ParseError(
+                source.to_string(),
+                "Formato no soportado. Use TOML o JSON".to_string(),
+            )),
         }
     }
-    
+
     /// Cargar desde TOML
     fn load_from_toml(&self, content: &str, source: &str) -> LoadResult<Form> {
         let form: TomlForm = toml::from_str(content)
             .map_err(|e| LoadError::ParseError(source.to_string(), e.to_string()))?;
-            
+
         self.convert_and_validate(form.into(), source)
     }
-    
+
     /// Cargar desde JSON
     fn load_from_json(&self, content: &str, source: &str) -> LoadResult<Form> {
         let form: JsonForm = serde_json::from_str(content)
             .map_err(|e| LoadError::ParseError(source.to_string(), e.to_string()))?;
-            
+
         self.convert_and_validate(form.into(), source)
     }
-    
+
     /// Convertir y validar formulario
     fn convert_and_validate(&self, mut form: Form, source: &str) -> LoadResult<Form> {
         // Auto-detectar tipos si está habilitado
         if self.config.auto_detect_types {
             self.auto_detect_field_types(&mut form);
         }
-        
+
         // Validar esquema
         if self.config.strict_validation {
             self.validate_form_schema(&form, source)?;
         }
-        
+
         Ok(form)
     }
-    
+
     /// Auto-detectar tipos de campos basado en nombres
     fn auto_detect_field_types(&self, form: &mut Form) {
         for (name, field) in &mut form.fields {
@@ -144,69 +145,104 @@ impl FormLoader {
                 // Auto-detectar basado en nombre del campo
                 match name.to_lowercase().as_str() {
                     name if name.contains("email") => field.field_type = FieldType::Email,
-                    name if name.contains("date") && !name.contains("time") => field.field_type = FieldType::Date,
-                    name if name.contains("datetime") || name.contains("timestamp") => field.field_type = FieldType::DateTime,
-                    name if name.contains("count") || name.contains("num") || name.contains("id") => field.field_type = FieldType::Int,
-                    name if name.contains("price") || name.contains("amount") || name.contains("rate") => field.field_type = FieldType::Float,
-                    name if name.contains("active") || name.contains("enabled") || name.contains("visible") => field.field_type = FieldType::Boolean,
+                    name if name.contains("date") && !name.contains("time") => {
+                        field.field_type = FieldType::Date
+                    }
+                    name if name.contains("datetime") || name.contains("timestamp") => {
+                        field.field_type = FieldType::DateTime
+                    }
+                    name if name.contains("count")
+                        || name.contains("num")
+                        || name.contains("id") =>
+                    {
+                        field.field_type = FieldType::Int
+                    }
+                    name if name.contains("price")
+                        || name.contains("amount")
+                        || name.contains("rate") =>
+                    {
+                        field.field_type = FieldType::Float
+                    }
+                    name if name.contains("active")
+                        || name.contains("enabled")
+                        || name.contains("visible") =>
+                    {
+                        field.field_type = FieldType::Boolean
+                    }
                     _ => {}
                 }
             }
         }
     }
-    
+
     /// Validar esquema del formulario
-    fn validate_form_schema(&self, form: &Form, source: &str) -> LoadResult<()> {
+    fn validate_form_schema(&self, form: &Form, _source: &str) -> LoadResult<()> {
         // Validar que tenga al menos un campo
         if form.fields.is_empty() {
-            return Err(LoadError::ValidationError("Formulario debe tener al menos un campo".to_string()));
+            return Err(LoadError::ValidationError(
+                "Formulario debe tener al menos un campo".to_string(),
+            ));
         }
-        
+
         // Validar que tenga al menos una acción
         if form.actions.is_empty() {
-            return Err(LoadError::ValidationError("Formulario debe tener al menos una acción".to_string()));
+            return Err(LoadError::ValidationError(
+                "Formulario debe tener al menos una acción".to_string(),
+            ));
         }
-        
+
         // Validar acciones
         for (action_name, action) in &form.actions {
             if let Some(sql) = &action.sql {
                 if sql.trim().is_empty() {
-                    return Err(LoadError::ValidationError(
-                        format!("Acción '{}' tiene SQL vacío", action_name)));
+                    return Err(LoadError::ValidationError(format!(
+                        "Acción '{}' tiene SQL vacío",
+                        action_name
+                    )));
                 }
             }
         }
-        
+
         // Validar campos requeridos
         for (field_name, field) in &form.fields {
             if field.required && field.default.is_none() {
                 // Campo requerido sin default - OK si viene del usuario
                 continue;
             }
-            
+
             // Validar tipos de selección
             if let FieldType::Select { options } = &field.field_type {
                 if options.is_empty() {
-                    return Err(LoadError::ValidationError(
-                        format!("Campo '{}' de tipo Select debe tener opciones", field_name)));
+                    return Err(LoadError::ValidationError(format!(
+                        "Campo '{}' de tipo Select debe tener opciones",
+                        field_name
+                    )));
                 }
             }
-            
-            if let FieldType::MultiSelect { options, max_selections } = &field.field_type {
+
+            if let FieldType::MultiSelect {
+                options,
+                max_selections,
+            } = &field.field_type
+            {
                 if options.is_empty() {
-                    return Err(LoadError::ValidationError(
-                        format!("Campo '{}' de tipo MultiSelect debe tener opciones", field_name)));
+                    return Err(LoadError::ValidationError(format!(
+                        "Campo '{}' de tipo MultiSelect debe tener opciones",
+                        field_name
+                    )));
                 }
-                
+
                 if let Some(max) = max_selections {
                     if *max == 0 {
-                        return Err(LoadError::ValidationError(
-                            format!("Campo '{}' MultiSelect max_selections debe ser > 0", field_name)));
+                        return Err(LoadError::ValidationError(format!(
+                            "Campo '{}' MultiSelect max_selections debe ser > 0",
+                            field_name
+                        )));
                     }
                 }
             }
         }
-        
+
         Ok(())
     }
 }
@@ -340,14 +376,18 @@ struct JsonPaginationConfig {
 /// Conversiones desde representaciones intermedias
 impl From<TomlForm> for Form {
     fn from(toml_form: TomlForm) -> Self {
-        let fields = toml_form.fields.into_iter()
+        let fields = toml_form
+            .fields
+            .into_iter()
             .map(|(name, field)| (name, field.into()))
             .collect();
-            
-        let actions = toml_form.actions.into_iter()
+
+        let actions = toml_form
+            .actions
+            .into_iter()
             .map(|(name, action)| (name, action.into()))
             .collect();
-            
+
         Self {
             title: toml_form.title,
             schema: toml_form.schema,
@@ -392,7 +432,11 @@ impl From<TomlAction> for FormAction {
             action_type: parse_action_type(&action.action_type),
             sql: action.sql,
             params: action.params,
-            param_type: action.param_type.as_deref().map(parse_param_type).unwrap_or(ParamType::Named),
+            param_type: action
+                .param_type
+                .as_deref()
+                .map(parse_param_type)
+                .unwrap_or(ParamType::Named),
         }
     }
 }
@@ -421,14 +465,18 @@ impl From<TomlPaginationConfig> for crate::forms::PaginationConfig {
 
 impl From<JsonForm> for Form {
     fn from(json_form: JsonForm) -> Self {
-        let fields = json_form.fields.into_iter()
+        let fields = json_form
+            .fields
+            .into_iter()
             .map(|(name, field)| (name, field.into()))
             .collect();
-            
-        let actions = json_form.actions.into_iter()
+
+        let actions = json_form
+            .actions
+            .into_iter()
             .map(|(name, action)| (name, action.into()))
             .collect();
-            
+
         Self {
             title: json_form.title,
             schema: json_form.schema,
@@ -473,7 +521,11 @@ impl From<JsonAction> for FormAction {
             action_type: parse_action_type(&action.action_type),
             sql: action.sql,
             params: action.params,
-            param_type: action.param_type.as_deref().map(parse_param_type).unwrap_or(ParamType::Named),
+            param_type: action
+                .param_type
+                .as_deref()
+                .map(parse_param_type)
+                .unwrap_or(ParamType::Named),
         }
     }
 }

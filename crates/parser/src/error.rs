@@ -11,29 +11,29 @@ pub enum ParserError {
         column: usize,
         message: String,
     },
-    
+
     #[error("Token inesperado '{token}' en línea {line}")]
     UnexpectedToken {
         line: usize,
         column: usize,
         token: String,
     },
-    
+
     #[error("Parámetro no válido: {0}")]
     InvalidParameter(String),
-    
+
     #[error("Comando RQL no reconocido: {0}")]
     UnknownCommand(String),
-    
+
     #[error("Error de template: {0}")]
     TemplateError(String),
-    
+
     #[error("Error de conversión de tipos: {0}")]
     TypeConversionError(String),
-    
+
     #[error("Error de parseo de sqlparser: {0}")]
     SqlParserError(String),
-    
+
     #[error("Error interno del parser: {0}")]
     InternalError(String),
 }
@@ -47,7 +47,7 @@ impl ParserError {
             message: message.into(),
         }
     }
-    
+
     /// Crear error de token inesperado
     pub fn unexpected_token<T: Into<String>>(line: usize, column: usize, token: T) -> Self {
         Self::UnexpectedToken {
@@ -56,17 +56,17 @@ impl ParserError {
             token: token.into(),
         }
     }
-    
+
     /// Crear error de parámetro inválido
     pub fn invalid_parameter<T: Into<String>>(param: T) -> Self {
         Self::InvalidParameter(param.into())
     }
-    
+
     /// Crear error de comando desconocido
     pub fn unknown_command<T: Into<String>>(command: T) -> Self {
         self::ParserError::UnknownCommand(command.into())
     }
-    
+
     /// Crear error de template
     pub fn template_error<T: Into<String>>(message: T) -> Self {
         Self::TemplateError(message.into())

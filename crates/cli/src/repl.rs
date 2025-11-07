@@ -1,9 +1,9 @@
 //! REPL (Read-Eval-Print Loop) para Noctra
 
-use std::io::{self, Write};
-use crate::config::CliConfig;
 use crate::cli::ReplArgs;
+use crate::config::CliConfig;
 use noctra_core::NoctraError;
+use std::io::{self, Write};
 type Result<T> = std::result::Result<T, NoctraError>;
 
 /// Handler del REPL
@@ -11,13 +11,13 @@ type Result<T> = std::result::Result<T, NoctraError>;
 pub struct ReplHandler {
     /// Configuración
     config: CliConfig,
-    
+
     /// Estado del REPL
     state: ReplState,
-    
+
     /// Historial de comandos
     history: Vec<String>,
-    
+
     /// Contador de líneas
     line_count: usize,
 }
@@ -27,13 +27,13 @@ pub struct ReplHandler {
 pub enum ReplState {
     /// Listo para comando
     Ready,
-    
+
     /// Esperando más líneas (query multi-línea)
     MultiLine,
-    
+
     /// Esperando parámetro
     WaitingParameter(String),
-    
+
     /// Error
     Error,
 }
@@ -43,7 +43,7 @@ pub enum ReplState {
 pub struct Repl {
     /// Configuración
     config: CliConfig,
-    
+
     /// Handler
     handler: ReplHandler,
 }
@@ -52,34 +52,31 @@ impl Repl {
     /// Crear nuevo REPL
     pub fn new(config: CliConfig, args: ReplArgs) -> Result<Self> {
         let handler = ReplHandler::new(config.clone(), args)?;
-        
-        Ok(Self {
-            config,
-            handler,
-        })
+
+        Ok(Self { config, handler })
     }
-    
+
     /// Ejecutar REPL
     pub async fn run(&mut self) -> Result<()> {
         println!("🎯 Noctra REPL iniciado - Escribe 'help' para ayuda");
-        
+
         loop {
             // Mostrar prompt
             let prompt = self.get_prompt();
-            
+
             // Leer input
             let input = read_input(&prompt)?;
-            
+
             // Procesar input
             if self.process_input(&input)? {
                 break; // Salir del REPL
             }
         }
-        
+
         println!("👋 ¡Hasta luego!");
         Ok(())
     }
-    
+
     /// Obtener prompt actual
     fn get_prompt(&self) -> String {
         match &self.handler.state {
@@ -89,41 +86,41 @@ impl Repl {
             ReplState::Error => "ERROR> ".to_string(),
         }
     }
-    
+
     /// Procesar input del usuario
     fn process_input(&mut self, input: &str) -> Result<bool> {
         let trimmed = input.trim();
-        
+
         // Comandos especiales
         if trimmed.is_empty() {
             return Ok(false);
         }
-        
+
         if trimmed == "quit" || trimmed == "exit" || trimmed == "q" {
             return Ok(true); // Salir
         }
-        
+
         if trimmed == "help" || trimmed == "h" || trimmed == "?" {
             self.show_help();
             return Ok(false);
         }
-        
+
         if trimmed == "clear" || trimmed == "cls" {
             self.clear_screen();
             return Ok(false);
         }
-        
+
         if trimmed.starts_with(':') {
             return self.handle_special_command(trimmed);
         }
-        
+
         // Agregar a historial
         self.handler.history.push(input.to_string());
-        
+
         // Procesar como SQL/RQL
         self.execute_query(input)
     }
-    
+
     /// Manejar comandos especiales
     fn handle_special_command(&mut self, cmd: &str) -> Result<bool> {
         match cmd {
@@ -158,18 +155,18 @@ impl Repl {
             }
         }
     }
-    
+
     /// Ejecutar query (versión simplificada)
     fn execute_query(&mut self, query: &str) -> Result<bool> {
         println!("🔍 Ejecutando query...");
-        
+
         // Por ahora, mostrar el query
         println!("📝 Query: {}", query);
         println!("⚠️  Query execution pendiente de implementación");
-        
+
         Ok(false)
     }
-    
+
     /// Mostrar ayuda
     fn show_help(&self) {
         println!("🐍 Noctra - Comandos disponibles:");
@@ -188,13 +185,13 @@ impl Repl {
         println!("  :dept => IT");
         println!();
     }
-    
+
     /// Limpiar pantalla
     fn clear_screen(&self) {
         print!("\x1B[2J\x1B[H");
         io::stdout().flush().unwrap();
     }
-    
+
     /// Mostrar configuración
     fn show_config(&self) {
         println!("⚙️  Configuración actual:");
@@ -203,7 +200,7 @@ impl Repl {
         println!("  Theme: {:?}", self.config.global.theme);
         println!("  Color Mode: {:?}", self.config.global.color_mode);
     }
-    
+
     /// Mostrar estado
     fn show_status(&self) {
         println!("📊 Estado del REPL:");
@@ -211,14 +208,18 @@ impl Repl {
         println!("  Comandos en historial: {}", self.handler.history.len());
         println!("  Estado: {:?}", self.handler.state);
     }
-    
+
     /// Manejar comando SET
     fn handle_set_command(&mut self, cmd: &str) {
         let parts: Vec<&str> = cmd.splitn(2, ' ').collect();
         if parts.len() == 2 {
             let key_value = parts[1];
             if let Some((key, value)) = key_value.split_once('=') {
-                println!("📝 Variable '{}' configurada a '{}'", key.trim(), value.trim());
+                println!(
+                    "📝 Variable '{}' configurada a '{}'",
+                    key.trim(),
+                    value.trim()
+                );
             } else {
                 println!("❌ Formato inválido. Usa: :set KEY=VALUE");
             }
@@ -243,12 +244,15 @@ impl ReplHandler {
 /// Leer input con prompt
 fn read_input(prompt: &str) -> Result<String> {
     print!("{}", prompt);
-    io::stdout().flush().map_err(|e| NoctraError::Io(e.to_string()))?;
-    
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)
+    io::stdout()
+        .flush()
         .map_err(|e| NoctraError::Io(e.to_string()))?;
-    
+
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|e| NoctraError::Io(e.to_string()))?;
+
     Ok(input.trim().to_string())
 }
 
