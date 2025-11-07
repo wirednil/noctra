@@ -11,7 +11,7 @@ use clap::Parser;
 use std::process::ExitCode;
 use log::error;
 
-use crate::app::{NoctraArgs, build_cli};
+use noctra_cli::{NoctraArgs, build_app as build_cli};
 
 #[tokio::main]
 async fn main() -> ExitCode {

@@ -361,10 +361,6 @@ impl CliConfig {
     /// Validar configuración
     pub fn validate(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Validar configuraciones críticas
-        if self.global.history_size == 0 {
-            return Err("History size must be greater than 0".into());
-        }
-        
         if self.repl.history_size == 0 {
             return Err("REPL history size must be greater than 0".into());
         }

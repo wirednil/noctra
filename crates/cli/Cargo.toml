@@ -48,7 +48,7 @@ path = "src/main.rs"
 
 [lib]
 name = "noctra_cli"
-crate-type = ["cdylib"]
+crate-type = ["rlib", "cdylib"]
 
 [package.metadata.docs.rs]
 all-features = true

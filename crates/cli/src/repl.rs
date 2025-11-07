@@ -243,11 +243,11 @@ impl ReplHandler {
 /// Leer input con prompt
 fn read_input(prompt: &str) -> Result<String> {
     print!("{}", prompt);
-    io::stdout().flush()?;
+    io::stdout().flush().map_err(|e| NoctraError::Io(e.to_string()))?;
     
     let mut input = String::new();
     io::stdin().read_line(&mut input)
-        .map_err(|e| NoctraError::Io(e))?;
+        .map_err(|e| NoctraError::Io(e.to_string()))?;
     
     Ok(input.trim().to_string())
 }

@@ -61,10 +61,10 @@ impl NoctraApp {
     /// Conectar a base de datos
     async fn connect_database(&mut self) -> AppResult<()> {
         info!("📡 Conectando a base de datos: {}", self.config.database.connection_string);
-        
+
         // Por ahora, conectar a SQLite
-        let sqlite_backend = SqliteBackend::new(&self.config.database.connection_string)?;
-        let session = Session::new(self.config.database.connection_string.clone());
+        let _sqlite_backend = SqliteBackend::with_file(&self.config.database.connection_string)?;
+        let session = Session::new();
         
         self.session = Some(session);
         
@@ -75,42 +75,37 @@ impl NoctraApp {
     /// Configurar executor
     async fn setup_executor(&mut self) -> AppResult<()> {
         if let Some(ref session) = self.session {
-            // Crear executor con SQLite backend
-            let executor = Executor::new(self.config.database.backend_type.clone());
+            // Crear backend apropiado según configuración
+            let backend: std::sync::Arc<dyn noctra_core::Backend> = match self.config.database.backend_type {
+                crate::config::BackendType::Sqlite => {
+                    let sqlite_backend = SqliteBackend::with_file(&self.config.database.connection_string)?;
+                    std::sync::Arc::new(sqlite_backend)
+                },
+                _ => {
+                    return Err("Backend no soportado aún".into());
+                }
+            };
+
+            // Crear executor con el backend
+            let executor = Executor::new(backend);
             self.executor = Some(executor);
-            
+
             info!("⚙️ Executor configurado");
         }
-        
+
         Ok(())
     }
     
     /// Ejecutar aplicación en modo REPL
     pub async fn run_repl(&mut self) -> AppResult<()> {
         info!("🎮 Iniciando modo REPL...");
-        
+
         // Crear REPL
-        let mut repl = Repl::new(self.config.clone());
-        
-        // Ejecutar loop REPL
-        loop {
-            let input = repl.read_line().await?;
-            
-            if input.trim() == "quit" || input.trim() == "exit" {
-                println!("👋 ¡Hasta luego!");
-                break;
-            }
-            
-            if !input.trim().is_empty() {
-                let result = self.execute_command(&input).await?;
-                println!("{}", result.message);
-                
-                if let Some(data) = result.data {
-                    println!("{}", data.to_table());
-                }
-            }
-        }
-        
+        let mut repl = Repl::new(self.config.clone(), crate::cli::ReplArgs::default())?;
+
+        // Ejecutar REPL (maneja el loop internamente)
+        repl.run().await?;
+
         Ok(())
     }
     
@@ -210,7 +205,8 @@ impl NoctraApp {
     async fn execute_command(&mut self, input: &str) -> AppResult<CommandResult> {
         let mut executor = CommandExecutor::new(self.config.clone());
         executor.context.session = self.session.clone();
-        executor.context.executor = self.executor.clone();
+        // TODO: Share executor without cloning (requires Arc or refactoring)
+        executor.context.executor = None;
         executor.context.parser = self.parser.clone();
         
         let result = executor.execute_command(input).await;
@@ -342,17 +338,14 @@ impl CliConfig {
         // Configurar base de datos
         config.database.connection_string = args.database.clone();
         config.database.backend_type = if args.database.starts_with("sqlite:") {
-            "sqlite".to_string()
+            crate::config::BackendType::Sqlite
         } else {
-            "postgres".to_string()
+            crate::config::BackendType::Postgres
         };
         
         // Configurar verbosidad
         config.global.verbose = args.verbose;
-        
-        // Configurar modo batch
-        config.global.batch_mode = args.batch;
-        
+
         Ok(config)
     }
 }

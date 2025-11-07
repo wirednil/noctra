@@ -70,7 +70,7 @@ pub enum NoctraSubcommand {
 }
 
 /// Argumentos del REPL
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ReplArgs {
     /// Prompt personalizado
     #[arg(short, long, value_name = "PROMPT")]
@@ -86,7 +86,7 @@ pub struct ReplArgs {
 }
 
 /// Argumentos de batch processing
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct BatchArgs {
     /// Archivo de script RQL
     #[arg(required = true, value_name = "FILE")]
@@ -114,7 +114,7 @@ pub struct BatchArgs {
 }
 
 /// Argumentos de formulario
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct FormArgs {
     /// Archivo de formulario TOML
     #[arg(required = true, value_name = "FILE")]
@@ -134,7 +134,7 @@ pub struct FormArgs {
 }
 
 /// Argumentos de query directo
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct QueryArgs {
     /// Query SQL a ejecutar
     #[arg(required = true, value_name = "SQL")]
@@ -158,7 +158,7 @@ pub struct QueryArgs {
 }
 
 /// Argumentos de información
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct InfoArgs {
     /// Mostrar información de la base de datos
     #[arg(short, long)]
@@ -174,7 +174,7 @@ pub struct InfoArgs {
 }
 
 /// Argumentos de configuración
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ConfigArgs {
     /// Mostrar configuración actual
     #[arg(short, long)]
@@ -236,6 +236,14 @@ impl KeyValueArg {
     }
 }
 
+impl std::str::FromStr for KeyValueArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s)
+    }
+}
+
 /// Aplicación principal de Noctra
 #[derive(Debug)]
 pub struct NoctraApp {
@@ -251,12 +259,20 @@ impl NoctraApp {
     }
     
     /// Ejecutar aplicación
-    pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
-        let result = match self.args.command {
-            Some(command) => self.run_command(command).await,
+    pub async fn run(mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let command = self.args.command.take();
+        let result = match command {
+            Some(cmd) => match cmd {
+                NoctraSubcommand::Repl(args) => self.run_repl(args).await,
+                NoctraSubcommand::Batch(args) => self.run_batch(args).await,
+                NoctraSubcommand::Form(args) => self.run_form(args).await,
+                NoctraSubcommand::Query(args) => self.run_query(args).await,
+                NoctraSubcommand::Info(args) => self.run_info(args),
+                NoctraSubcommand::Config(args) => self.run_config(args),
+            },
             None => self.run_interactive().await,
         };
-        
+
         result
     }
     
@@ -285,7 +301,7 @@ impl NoctraApp {
         println!("Escribe 'help' para comandos disponibles o 'quit' para salir.");
         
         // Crear e iniciar REPL
-        let repl = crate::repl::Repl::new(self.config, args)?;
+        let mut repl = crate::repl::Repl::new(self.config, args)?;
         repl.run().await?;
         
         Ok(())
@@ -364,7 +380,7 @@ impl NoctraApp {
     }
     
     /// Ejecutar comando config
-    fn run_config(self, args: ConfigArgs) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_config(mut self, args: ConfigArgs) -> Result<(), Box<dyn std::error::Error>> {
         if args.show {
             self.show_config();
         } else if args.edit {
@@ -491,5 +507,6 @@ fn apply_cli_overrides(config: &mut CliConfig, args: &NoctraArgs) {
 
 /// Construir parser de CLI
 pub fn build_cli() -> clap::Command {
+    use clap::CommandFactory;
     NoctraArgs::command()
 }

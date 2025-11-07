@@ -98,12 +98,16 @@ impl CommandExecutor {
     }
     
     pub async fn execute_command(&mut self, input: &str) -> CommandResult {
+        Box::pin(self.execute_command_inner(input)).await
+    }
+
+    async fn execute_command_inner(&mut self, input: &str) -> CommandResult {
         let trimmed_input = input.trim();
-        
+
         if trimmed_input.is_empty() {
             return CommandResult::success("Comando vacío".to_string());
         }
-        
+
         // Detectar comando
         if trimmed_input.starts_with(':') {
             self.execute_extended_command(trimmed_input).await
@@ -218,7 +222,7 @@ EJEMPLOS:
         
         // TODO: Implementar cambio real de base de datos
         // Crear nueva sesión con SQLite
-        let session = Session::new(db_name.to_string());
+        let session = Session::new();
         self.context.session = Some(session);
         
         CommandResult::success(format!("Cambiando a base de datos: {}", db_name))
@@ -243,9 +247,10 @@ EJEMPLOS:
             return CommandResult::failure(format!("Archivo no encontrado: {}", args[0]));
         }
         
-        let content = std::fs::read_to_string(&file_path)
-            .map_err(|e| format!("Error leyendo archivo: {}", e))
-            .unwrap_or_else(|e| return CommandResult::failure(e));
+        let content = match std::fs::read_to_string(&file_path) {
+            Ok(c) => c,
+            Err(e) => return CommandResult::failure(format!("Error leyendo archivo: {}", e)),
+        };
             
         // Procesar archivo línea por línea
         let lines: Vec<&str> = content.lines().collect();
