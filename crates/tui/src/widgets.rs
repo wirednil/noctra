@@ -437,6 +437,26 @@ impl Panel {
             None
         }
     }
+
+    /// Establecer ancho
+    pub fn set_width(&mut self, width: usize) {
+        self.width = width;
+    }
+
+    /// Establecer alto
+    pub fn set_height(&mut self, height: usize) {
+        self.height = height;
+    }
+
+    /// Obtener ancho
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    /// Obtener alto
+    pub fn height(&self) -> usize {
+        self.height
+    }
 }
 
 impl Widget for Panel {

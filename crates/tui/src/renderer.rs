@@ -8,7 +8,7 @@ use crossterm::{
     terminal::{ClearType, EnterAlternateScreen, LeaveAlternateScreen},
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
 };
-use std::io::{stdout, Stdout};
+use std::io::{stdout, Stdout, Write};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
@@ -298,9 +298,9 @@ impl TuiRenderer {
     /// Manejar cambios de tamaño
     fn handle_resize(&mut self, width: u16, height: u16) {
         // Actualizar tamaño del panel raíz
-        self.root_panel.width = width as usize;
-        self.root_panel.height = height as usize;
-        
+        self.root_panel.set_width(width as usize);
+        self.root_panel.set_height(height as usize);
+
         // Notificar a componentes del cambio de tamaño
         for component in &mut self.components {
             // TODO: Implementar notificación de resize
@@ -375,7 +375,7 @@ impl TuiRenderer {
     
     /// Obtener dimensiones actuales
     pub fn get_size(&self) -> (usize, usize) {
-        (self.root_panel.height, self.root_panel.width)
+        (self.root_panel.height(), self.root_panel.width())
     }
 }
 

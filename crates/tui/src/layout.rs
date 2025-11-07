@@ -28,11 +28,11 @@ pub struct Size {
 }
 
 /// Rectángulo de layout
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Rect {
     /// Posición superior izquierda
     pub position: Position,
-    
+
     /// Dimensiones
     pub size: Size,
 }
@@ -142,11 +142,10 @@ pub enum LayoutStrategy {
 }
 
 /// Elemento de layout
-#[derive(Debug, Clone)]
 pub struct LayoutElement {
     /// Identificador único
     pub id: String,
-    
+
     /// Componente asociado
     pub component: Box<dyn Component>,
     
@@ -307,25 +306,27 @@ impl LayoutManager {
     
     /// Recalcular layout completo
     pub fn recalculate_layout(&mut self) {
-        match &self.strategy {
-            LayoutStrategy::Vertical { spacing, padding, fixed_heights } => {
-                self.apply_vertical_layout(*spacing, *padding, fixed_heights);
+        // Clonar la estrategia para evitar conflictos de préstamos
+        let strategy = self.strategy.clone();
+        match strategy {
+            LayoutStrategy::Vertical { spacing, padding, ref fixed_heights } => {
+                self.apply_vertical_layout(spacing, padding, fixed_heights);
             }
-            
-            LayoutStrategy::Horizontal { spacing, padding, fixed_widths } => {
-                self.apply_horizontal_layout(*spacing, padding, fixed_widths);
+
+            LayoutStrategy::Horizontal { spacing, padding, ref fixed_widths } => {
+                self.apply_horizontal_layout(spacing, padding, fixed_widths);
             }
-            
-            LayoutStrategy::Grid { columns, rows, column_spacing, row_spacing, padding, positions, spans } => {
-                self.apply_grid_layout(*columns, *rows, *column_spacing, *row_spacing, *padding, positions, spans);
+
+            LayoutStrategy::Grid { columns, rows, column_spacing, row_spacing, padding, ref positions, ref spans } => {
+                self.apply_grid_layout(columns, rows, column_spacing, row_spacing, padding, positions, spans);
             }
-            
-            LayoutStrategy::Absolute { positions } => {
+
+            LayoutStrategy::Absolute { ref positions } => {
                 self.apply_absolute_layout(positions);
             }
-            
-            LayoutStrategy::Weighted { vertical_weights, horizontal_weights, spacing, padding } => {
-                self.apply_weighted_layout(vertical_weights, horizontal_weights, *spacing, *padding);
+
+            LayoutStrategy::Weighted { ref vertical_weights, ref horizontal_weights, spacing, padding } => {
+                self.apply_weighted_layout(vertical_weights, horizontal_weights, spacing, padding);
             }
         }
     }
@@ -471,18 +472,18 @@ impl LayoutManager {
         
         let available_width = self.total_area.size.width.saturating_sub(padding * 2);
         let available_height = self.total_area.size.height.saturating_sub(padding * 2);
-        
-        for (i, element) in &mut self.elements.iter().enumerate() {
+
+        for (_i, element) in self.elements.iter_mut().enumerate() {
             if !element.visible {
                 continue;
             }
-            
+
             let v_weight = vertical_weights.get(&element.id).unwrap_or(&1.0);
             let h_weight = horizontal_weights.get(&element.id).unwrap_or(&1.0);
-            
+
             let width = (available_width as f64 * h_weight / total_horizontal_weight) as usize;
             let height = (available_height as f64 * v_weight / total_vertical_weight) as usize;
-            
+
             element.rect.size.width = width;
             element.rect.size.height = height;
         }

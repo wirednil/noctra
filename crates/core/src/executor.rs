@@ -128,15 +128,13 @@ impl Backend for SqliteBackend {
         let sqlite_params = map_parameters_to_sqlite(parameters)?;
         let params: Vec<&dyn rusqlite::ToSql> = sqlite_params.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
 
-        let rows_result: Result<Rows<'_>> = if parameters.is_empty() {
+        let mut rows = if parameters.is_empty() {
             stmt.query(())
-                .map_err(|e| NoctraError::sql_execution(format!("Failed to execute query: {}", e)))
+                .map_err(|e| NoctraError::sql_execution(format!("Failed to execute query: {}", e)))?
         } else {
             stmt.query(&*params)
-                .map_err(|e| NoctraError::sql_execution(format!("Failed to execute query: {}", e)))
+                .map_err(|e| NoctraError::sql_execution(format!("Failed to execute query: {}", e)))?
         };
-
-        let mut rows = rows_result.map_err(|e| NoctraError::sql_execution(format!("Failed to execute query: {}", e)))?;
 
         while let Ok(Some(row)) = rows.next() {
             let mut values = Vec::new();

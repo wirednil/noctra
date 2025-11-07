@@ -92,7 +92,7 @@ impl TableComponent {
     }
     
     /// Obtener fila actual
-    pub fn get_current_row(&self) -> Option<&Vec<Value>> {
+    pub fn get_current_row(&self) -> Option<&Row> {
         self.result_set.rows.get(self.cursor_position.0)
     }
     
@@ -453,7 +453,7 @@ impl Component for FormComponent {
     
     fn handle_event(&mut self, event: crossterm::event::Event) -> ComponentResult {
         match event {
-            crossterm::event::event::Event::Key(key_event) => match key_event.code {
+            crossterm::event::Event::Key(key_event) => match key_event.code {
                 crossterm::event::KeyCode::Tab => {
                     // Cambiar al siguiente campo
                     let next_field = self.get_next_field(self.active_field.as_deref());
