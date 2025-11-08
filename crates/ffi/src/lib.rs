@@ -16,6 +16,11 @@ pub const FFI_INVALID_INPUT: c_int = -2;
 
 /// Ejecutar consulta SQL y retornar resultado JSON
 ///
+/// # Safety
+/// This function dereferences raw pointers from C. The caller must ensure:
+/// * `sql` points to a valid, null-terminated C string
+/// * `out_json` points to a valid mutable pointer location
+///
 /// # Arguments
 /// * `sql` - Query SQL como string C
 /// * `out_json` - Buffer para resultado JSON (allocado por la función)
@@ -23,14 +28,14 @@ pub const FFI_INVALID_INPUT: c_int = -2;
 /// # Returns
 /// FFI_SUCCESS on success, FFI_ERROR on failure
 #[no_mangle]
-pub extern "C" fn noctra_exec(sql: *const c_char, out_json: *mut *mut c_char) -> FfiResult {
+pub unsafe extern "C" fn noctra_exec(sql: *const c_char, out_json: *mut *mut c_char) -> FfiResult {
     // Verificar input válido
     if sql.is_null() || out_json.is_null() {
         return FFI_INVALID_INPUT;
     }
 
     // Convertir C string a Rust string
-    let _sql_str = match unsafe { CStr::from_ptr(sql).to_str() } {
+    let _sql_str = match CStr::from_ptr(sql).to_str() {
         Ok(s) => s,
         Err(_) => return FFI_INVALID_INPUT,
     };
@@ -52,9 +57,7 @@ pub extern "C" fn noctra_exec(sql: *const c_char, out_json: *mut *mut c_char) ->
     };
 
     // Retornar JSON al caller
-    unsafe {
-        *out_json = c_json.into_raw();
-    }
+    *out_json = c_json.into_raw();
 
     FFI_SUCCESS
 }
@@ -65,19 +68,23 @@ pub extern "C" fn noctra_exec(sql: *const c_char, out_json: *mut *mut c_char) ->
 /// String C con la versión
 #[no_mangle]
 pub extern "C" fn noctra_version() -> *const c_char {
-    "0.1.0\0".as_ptr() as *const c_char
+    c"0.1.0".as_ptr()
 }
 
 /// Liberar memoria de strings retornados por funciones FFI
 ///
+/// # Safety
+/// This function dereferences a raw pointer. The caller must ensure:
+/// * `ptr` was allocated by Noctra FFI functions (e.g., noctra_exec)
+/// * `ptr` has not been freed before
+/// * `ptr` will not be used after calling this function
+///
 /// # Arguments
 /// * `ptr` - Puntero a liberar
 #[no_mangle]
-pub extern "C" fn noctra_free(ptr: *mut c_char) {
+pub unsafe extern "C" fn noctra_free(ptr: *mut c_char) {
     if !ptr.is_null() {
-        unsafe {
-            let _ = CString::from_raw(ptr);
-        }
+        let _ = CString::from_raw(ptr);
     }
 }
 
@@ -112,7 +119,7 @@ mod tests {
     #[test]
     fn test_exec_invalid_input() {
         let mut out_json: *mut c_char = std::ptr::null_mut();
-        let result = noctra_exec(std::ptr::null(), &mut out_json);
+        let result = unsafe { noctra_exec(std::ptr::null(), &mut out_json) };
         assert_eq!(result, FFI_INVALID_INPUT);
     }
 }

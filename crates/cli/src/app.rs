@@ -5,13 +5,13 @@
 
 use clap::Parser;
 use log::info;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::commands::{CommandExecutor, CommandResult};
 use crate::config::CliConfig;
 use crate::repl::Repl;
 use noctra_core::{Executor, Session, SqliteBackend};
-use noctra_formlib::{load_form_from_path, FormExecutionContext};
+use noctra_formlib::load_form_from_path;
 use noctra_parser::RqlParser;
 use noctra_tui::{FormComponent, TuiApp, TuiConfig};
 
@@ -77,7 +77,7 @@ impl NoctraApp {
 
     /// Configurar executor
     async fn setup_executor(&mut self) -> AppResult<()> {
-        if let Some(ref session) = self.session {
+        if let Some(ref _session) = self.session {
             // Crear backend apropiado según configuración
             let backend: std::sync::Arc<dyn noctra_core::Backend> =
                 match self.config.database.backend_type {
@@ -172,7 +172,7 @@ impl NoctraApp {
     }
 
     /// Ejecutar formulario
-    pub async fn run_form(&mut self, form_path: &PathBuf) -> AppResult<()> {
+    pub async fn run_form(&mut self, form_path: &Path) -> AppResult<()> {
         info!("📋 Cargando formulario: {}", form_path.display());
 
         let form = load_form_from_path(form_path)?;
@@ -188,7 +188,7 @@ impl NoctraApp {
     }
 
     /// Ejecutar formulario en modo TUI
-    pub async fn run_tui_form(&mut self, form_path: &PathBuf) -> AppResult<()> {
+    pub async fn run_tui_form(&mut self, form_path: &Path) -> AppResult<()> {
         info!("🎨 Cargando formulario TUI: {}", form_path.display());
 
         let form = load_form_from_path(form_path)?;
@@ -197,8 +197,10 @@ impl NoctraApp {
         let form_component = FormComponent::new(form);
 
         // Crear aplicación TUI
-        let mut tui_config = TuiConfig::default();
-        tui_config.title = Some("Noctra Form".to_string());
+        let tui_config = TuiConfig {
+            title: Some("Noctra Form".to_string()),
+            ..Default::default()
+        };
 
         let mut tui_app = TuiApp::new(tui_config);
         tui_app.register_component(Box::new(form_component));

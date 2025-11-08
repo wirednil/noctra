@@ -42,6 +42,7 @@ pub struct GlobalConfig {
 
 /// Configuración del CLI específica
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct CliConfig {
     /// Configuración global
     pub global: GlobalConfig,
@@ -268,16 +269,6 @@ impl Default for GlobalConfig {
     }
 }
 
-impl Default for CliConfig {
-    fn default() -> Self {
-        Self {
-            global: GlobalConfig::default(),
-            repl: ReplConfig::default(),
-            batch: BatchConfig::default(),
-            database: DatabaseConfig::default(),
-        }
-    }
-}
 
 impl Default for ReplConfig {
     fn default() -> Self {

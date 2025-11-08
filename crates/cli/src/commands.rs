@@ -6,14 +6,13 @@
 use serde_json;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use tokio;
 
 use crate::config::CliConfig;
 use noctra_core::{Executor, NoctraError, ResultSet, Session};
-type Result<T> = std::result::Result<T, NoctraError>;
-use noctra_formlib::{load_form_from_path, FormExecutionContext};
-use noctra_parser::{RqlAst, RqlParser};
-use noctra_tui::{FormComponent, TuiApp, TuiConfig};
+type _Result<T> = std::result::Result<T, NoctraError>;
+use noctra_formlib::load_form_from_path;
+use noctra_parser::RqlParser;
+use noctra_tui::FormComponent;
 
 /// Contexto de ejecución de comandos
 #[derive(Debug)]
@@ -329,7 +328,7 @@ EJEMPLOS:
         match load_form_from_path(&form_path) {
             Ok(form) => {
                 // Crear componente de formulario
-                let form_component = FormComponent::new(form);
+                let _form_component = FormComponent::new(form);
 
                 // TODO: Integrar con TUI renderer real
                 let message = format!(
@@ -361,7 +360,7 @@ EJEMPLOS:
 
     /// Comando server
     async fn cmd_server(&mut self, args: &[&str]) -> CommandResult {
-        match args.get(0).map(|s| *s) {
+        match args.first().copied() {
             Some("start") => {
                 CommandResult::success("🚀 Iniciando servidor daemon noctrad...".to_string())
             }
@@ -527,7 +526,7 @@ pub async fn execute_command(input: &str, config: CliConfig) -> CommandResult {
 
 /// Funciones de utilidad para parsing de comandos
 pub mod parsing {
-    use std::str::FromStr;
+    
 
     /// Parsear parámetros de comando
     pub fn parse_params(input: &str) -> Vec<String> {
@@ -540,8 +539,8 @@ pub mod parsing {
 
     /// Parsear número de comando del historial
     pub fn parse_history_number(input: &str) -> Option<usize> {
-        if input.starts_with('!') {
-            input[1..].parse::<usize>().ok()
+        if let Some(stripped) = input.strip_prefix('!') {
+            stripped.parse::<usize>().ok()
         } else {
             None
         }

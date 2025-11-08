@@ -4,7 +4,6 @@
 //! con diferentes estrategias de posicionamiento y redimensionado.
 
 use crate::components::Component;
-use crate::widgets::{Panel, Widget};
 use std::collections::HashMap;
 
 /// Posición de un elemento
@@ -231,7 +230,7 @@ pub struct LayoutManager {
     total_area: Rect,
 
     /// Padding de los bordes
-    border_padding: usize,
+    _border_padding: usize,
 }
 
 impl LayoutManager {
@@ -247,7 +246,7 @@ impl LayoutManager {
             elements: Vec::new(),
             strategy,
             total_area: Rect::new(0, 0, total_width, total_height),
-            border_padding: 1,
+            _border_padding: 1,
         }
     }
 
@@ -261,7 +260,7 @@ impl LayoutManager {
             elements: Vec::new(),
             strategy,
             total_area: Rect::new(0, 0, total_width, total_height),
-            border_padding: 1,
+            _border_padding: 1,
         }
     }
 
@@ -463,6 +462,7 @@ impl LayoutManager {
     }
 
     /// Aplicar layout de grid
+    #[allow(clippy::too_many_arguments)]
     fn apply_grid_layout(
         &mut self,
         columns: usize,
@@ -534,7 +534,7 @@ impl LayoutManager {
         let available_width = self.total_area.size.width.saturating_sub(padding * 2);
         let available_height = self.total_area.size.height.saturating_sub(padding * 2);
 
-        for (_i, element) in self.elements.iter_mut().enumerate() {
+        for element in self.elements.iter_mut() {
             if !element.visible {
                 continue;
             }
@@ -587,7 +587,7 @@ pub struct LayoutBuilder {
     strategy: LayoutStrategy,
     total_width: usize,
     total_height: usize,
-    border_padding: usize,
+    _border_padding: usize,
 }
 
 impl LayoutBuilder {
@@ -601,7 +601,7 @@ impl LayoutBuilder {
             },
             total_width,
             total_height,
-            border_padding: 1,
+            _border_padding: 1,
         }
     }
 
@@ -667,7 +667,7 @@ impl LayoutBuilder {
 
     /// Establecer padding de borde
     pub fn border_padding(mut self, padding: usize) -> Self {
-        self.border_padding = padding;
+        self._border_padding = padding;
         self
     }
 

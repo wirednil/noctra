@@ -3,10 +3,10 @@
 //! Widgets reutilizables como botones, labels, inputs y otros elementos
 //! básicos de interfaz de usuario.
 
-use std::collections::HashMap;
 
 /// Estilo de texto
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct TextStyle {
     /// Color del texto
     pub foreground_color: Option<String>,
@@ -24,17 +24,6 @@ pub struct TextStyle {
     pub underline: bool,
 }
 
-impl Default for TextStyle {
-    fn default() -> Self {
-        Self {
-            foreground_color: None,
-            background_color: None,
-            bold: false,
-            italic: false,
-            underline: false,
-        }
-    }
-}
 
 /// Widget base
 pub trait Widget {
@@ -564,6 +553,11 @@ impl OptionList {
     /// Obtener número de opciones
     pub fn len(&self) -> usize {
         self.options.len()
+    }
+
+    /// Verificar si la lista está vacía
+    pub fn is_empty(&self) -> bool {
+        self.options.is_empty()
     }
 }
 

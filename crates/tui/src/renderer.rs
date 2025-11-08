@@ -8,7 +8,7 @@ use crossterm::{
     execute,
     terminal::{ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::io::{stdout, Stdout, Write};
+use std::io::{stdout, Write};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
@@ -86,6 +86,12 @@ pub struct TuiRenderer {
     last_update: Instant,
 }
 
+impl Default for TuiRenderer {
+    fn default() -> Self {
+        Self::new(TuiConfig::default())
+    }
+}
+
 impl TuiRenderer {
     /// Crear nuevo renderizador
     pub fn new(config: TuiConfig) -> Self {
@@ -103,11 +109,6 @@ impl TuiRenderer {
             is_running: false,
             last_update: Instant::now(),
         }
-    }
-
-    /// Crear con configuración por defecto
-    pub fn default() -> Self {
-        Self::new(TuiConfig::default())
     }
 
     /// Inicializar TUI
@@ -305,7 +306,7 @@ impl TuiRenderer {
         self.root_panel.set_height(height as usize);
 
         // Notificar a componentes del cambio de tamaño
-        for component in &mut self.components {
+        for _component in &mut self.components {
             // TODO: Implementar notificación de resize
         }
     }
@@ -396,16 +397,17 @@ pub struct TuiApp {
     renderer: TuiRenderer,
 }
 
+impl Default for TuiApp {
+    fn default() -> Self {
+        Self::new(TuiConfig::default())
+    }
+}
+
 impl TuiApp {
     /// Crear nueva aplicación TUI
     pub fn new(config: TuiConfig) -> Self {
         let renderer = TuiRenderer::new(config);
         Self { renderer }
-    }
-
-    /// Crear con configuración por defecto
-    pub fn default() -> Self {
-        Self::new(TuiConfig::default())
     }
 
     /// Registrar componente

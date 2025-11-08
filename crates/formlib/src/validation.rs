@@ -3,7 +3,7 @@
 //! Sistema de validación para campos de formularios, incluyendo
 //! validaciones de tipos, rangos, patrones y reglas de negocio.
 
-use chrono::{DateTime, Local, NaiveDate, NaiveDateTime};
+use chrono::{NaiveDate, NaiveDateTime};
 use regex::Regex;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -43,6 +43,12 @@ pub type ValidationResult = Result<(), ValidationError>;
 
 /// Validador principal
 pub struct FormValidator;
+
+impl Default for FormValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl FormValidator {
     /// Crear nuevo validador

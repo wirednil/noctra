@@ -66,15 +66,16 @@ pub struct FormLoader {
     config: LoaderConfig,
 }
 
+impl Default for FormLoader {
+    fn default() -> Self {
+        Self::new(LoaderConfig::default())
+    }
+}
+
 impl FormLoader {
     /// Crear nuevo loader
     pub fn new(config: LoaderConfig) -> Self {
         Self { config }
-    }
-
-    /// Crear loader con configuración por defecto
-    pub fn default() -> Self {
-        Self::new(LoaderConfig::default())
     }
 
     /// Cargar formulario desde path

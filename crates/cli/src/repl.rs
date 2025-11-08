@@ -15,7 +15,7 @@ type Result<T> = std::result::Result<T, NoctraError>;
 #[derive(Debug)]
 pub struct ReplHandler {
     /// Configuración
-    config: CliConfig,
+    _config: CliConfig,
 
     /// Estado del REPL
     state: ReplState,
@@ -56,7 +56,7 @@ pub struct Repl {
     executor: Executor,
 
     /// Parser RQL
-    parser: RqlParser,
+    _parser: RqlParser,
 
     /// Sesión actual
     session: Session,
@@ -72,7 +72,7 @@ impl Repl {
         let executor = Executor::new(Arc::new(backend));
 
         // Crear parser
-        let parser = RqlParser::new();
+        let _parser = RqlParser::new();
 
         // Crear sesión
         let session = Session::new();
@@ -81,7 +81,7 @@ impl Repl {
             config,
             handler,
             executor,
-            parser,
+            _parser,
             session,
         })
     }
@@ -302,7 +302,7 @@ impl ReplHandler {
     /// Crear nuevo handler
     fn new(config: CliConfig, _args: ReplArgs) -> Result<Self> {
         Ok(Self {
-            config,
+            _config: config,
             state: ReplState::Ready,
             history: Vec::new(),
             line_count: 0,
@@ -328,12 +328,3 @@ fn read_input(prompt: &str) -> Result<String> {
 /// Resultado de comando
 pub type CommandResult = Result<bool>;
 
-impl Default for ReplArgs {
-    fn default() -> Self {
-        Self {
-            prompt: None,
-            no_history: false,
-            history: None,
-        }
-    }
-}

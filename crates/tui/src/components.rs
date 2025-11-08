@@ -3,8 +3,8 @@
 //! Componentes reutilizables para formularios, tablas y navegación
 //! en la interfaz de usuario terminal.
 
-use noctra_core::{ResultSet, Row, Value};
-use noctra_formlib::{Form, FormField};
+use noctra_core::{ResultSet, Row};
+use noctra_formlib::Form;
 use std::collections::HashMap;
 
 /// Evento de componente TUI
@@ -145,7 +145,7 @@ impl Component for TableComponent {
 
         // Header con columnas
         if !self.result_set.columns.is_empty() {
-            output.push_str("┌");
+            output.push('┌');
 
             let column_widths: Vec<usize> = self
                 .result_set
@@ -167,14 +167,14 @@ impl Component for TableComponent {
 
             for (i, width) in column_widths.iter().enumerate() {
                 if i > 0 {
-                    output.push_str("┬");
+                    output.push('┬');
                 }
                 output.push_str(&"─".repeat(*width + 2));
             }
             output.push_str("┐\n");
 
             // Headers
-            output.push_str("│");
+            output.push('│');
             for (i, (col, width)) in self
                 .result_set
                 .columns
@@ -183,7 +183,7 @@ impl Component for TableComponent {
                 .enumerate()
             {
                 if i > 0 {
-                    output.push_str("│");
+                    output.push('│');
                 }
                 let display_text = &col.name[..col.name.len().min(*width)];
                 output.push_str(&format!(" {:width$} ", display_text, width = *width));
@@ -191,10 +191,10 @@ impl Component for TableComponent {
             output.push_str("│\n");
 
             // Separator después del header
-            output.push_str("├");
+            output.push('├');
             for (i, width) in column_widths.iter().enumerate() {
                 if i > 0 {
-                    output.push_str("┼");
+                    output.push('┼');
                 }
                 output.push_str(&"─".repeat(*width + 2));
             }
@@ -210,7 +210,7 @@ impl Component for TableComponent {
                 .collect::<Vec<_>>();
 
             for row in visible_rows {
-                output.push_str("│");
+                output.push('│');
                 for (i, (col, width)) in self
                     .result_set
                     .columns
@@ -219,7 +219,7 @@ impl Component for TableComponent {
                     .enumerate()
                 {
                     if i > 0 {
-                        output.push_str("│");
+                        output.push('│');
                     }
 
                     let value_str = row
@@ -234,10 +234,10 @@ impl Component for TableComponent {
             }
 
             // Footer
-            output.push_str("└");
+            output.push('└');
             for (i, width) in column_widths.iter().enumerate() {
                 if i > 0 {
-                    output.push_str("┴");
+                    output.push('┴');
                 }
                 output.push_str(&"─".repeat(*width + 2));
             }
@@ -552,7 +552,7 @@ impl Component for FormComponent {
                                 let value = self
                                     .field_values
                                     .entry(field_name.clone())
-                                    .or_insert_with(String::new);
+                                    .or_default();
                                 value.push(c);
                                 self.cursor_position += 1;
                             }

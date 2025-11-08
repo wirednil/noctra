@@ -1,6 +1,6 @@
 //! CLI principal de Noctra usando clap
 
-use crate::config::{CliConfig, GlobalConfig};
+use crate::config::CliConfig;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
@@ -70,7 +70,7 @@ pub enum NoctraSubcommand {
 }
 
 /// Argumentos del REPL
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, Default)]
 pub struct ReplArgs {
     /// Prompt personalizado
     #[arg(short, long, value_name = "PROMPT")]
@@ -277,6 +277,7 @@ impl NoctraApp {
     }
 
     /// Ejecutar comando específico
+    #[allow(dead_code)]
     async fn run_command(
         self,
         command: NoctraSubcommand,
@@ -312,7 +313,7 @@ impl NoctraApp {
 
     /// Ejecutar batch processing
     async fn run_batch(self, args: BatchArgs) -> Result<(), Box<dyn std::error::Error>> {
-        let script_content = std::fs::read_to_string(&args.script)
+        let _script_content = std::fs::read_to_string(&args.script)
             .map_err(|e| format!("Error reading script file: {}", e))?;
 
         println!("📜 Ejecutando script: {}", args.script.display());
