@@ -1,13 +1,17 @@
-//! Interactive Form Executor
+//! Interactive Form Executor con Ratatui
 //!
-//! Ejecutor de formularios con TUI interactivo usando crossterm.
+//! Ejecutor de formularios con TUI interactivo usando ratatui + crossterm.
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::io::{stdout, Write};
+use ratatui::{
+    backend::CrosstermBackend,
+    Terminal,
+};
+use std::io::{stdout, Stdout};
 use std::time::Duration;
 
 use noctra_formlib::Form;
@@ -36,64 +40,69 @@ impl std::error::Error for InteractiveError {}
 /// Resultado de ejecución interactiva
 pub type InteractiveResult<T> = Result<T, InteractiveError>;
 
-/// Ejecutor de formularios interactivo
+/// Ejecutor de formularios interactivo con Ratatui
 pub struct InteractiveFormExecutor {
     renderer: FormRenderer,
+    terminal: Terminal<CrosstermBackend<Stdout>>,
     running: bool,
 }
 
 impl InteractiveFormExecutor {
     /// Crear nuevo ejecutor
-    pub fn new(form: Form) -> Self {
-        // Detectar tamaño del terminal con mínimo de 80x24
-        let (term_width, term_height) = crossterm::terminal::size().unwrap_or((80, 24));
-        let width = term_width.max(80) as usize;
-        let height = term_height.max(24) as usize;
+    pub fn new(form: Form) -> InteractiveResult<Self> {
+        // Crear renderer (ratatui se adapta automáticamente al tamaño)
+        let renderer = FormRenderer::new(form);
 
-        let renderer = FormRenderer::new(form).with_size(width, height);
+        // Configurar terminal
+        enable_raw_mode().map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
+        let mut stdout = stdout();
+        execute!(stdout, EnterAlternateScreen)
+            .map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
 
-        Self {
+        let backend = CrosstermBackend::new(stdout);
+        let terminal = Terminal::new(backend)
+            .map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
+
+        Ok(Self {
             renderer,
-            running: false,
-        }
+            terminal,
+            running: true,
+        })
     }
 
     /// Ejecutar formulario de manera interactiva
     pub fn run(&mut self) -> InteractiveResult<Option<std::collections::HashMap<String, String>>> {
-        // Inicializar terminal
-        self.init_terminal()?;
-
         // Loop principal
         let result = self.run_loop();
 
-        // Restaurar terminal
+        // Limpiar terminal
         self.cleanup_terminal()?;
 
         result
     }
 
-    /// Inicializar terminal en modo raw
-    fn init_terminal(&mut self) -> InteractiveResult<()> {
-        enable_raw_mode().map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
-        execute!(stdout(), EnterAlternateScreen)
-            .map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
-        self.running = true;
-        Ok(())
-    }
-
     /// Limpiar terminal
     fn cleanup_terminal(&mut self) -> InteractiveResult<()> {
-        execute!(stdout(), LeaveAlternateScreen)
-            .map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
         disable_raw_mode().map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
+        execute!(self.terminal.backend_mut(), LeaveAlternateScreen)
+            .map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
+        self.terminal
+            .show_cursor()
+            .map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
         Ok(())
     }
 
     /// Loop principal de eventos
-    fn run_loop(&mut self) -> InteractiveResult<Option<std::collections::HashMap<String, String>>> {
+    fn run_loop(
+        &mut self,
+    ) -> InteractiveResult<Option<std::collections::HashMap<String, String>>> {
         while self.running {
-            // Renderizar
-            self.render()?;
+            // Renderizar usando ratatui
+            self.terminal
+                .draw(|frame| {
+                    self.renderer.render(frame, frame.size());
+                })
+                .map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
 
             // Procesar eventos
             if event::poll(Duration::from_millis(100))
@@ -106,8 +115,7 @@ impl InteractiveFormExecutor {
                         }
                     }
                     Event::Resize(_width, _height) => {
-                        // TODO: Implementar set_size() en FormRenderer para no perder estado
-                        // Por ahora ignoramos el resize para no perder datos del formulario
+                        // Ratatui maneja el resize automáticamente
                     }
                     _ => {}
                 }
@@ -118,27 +126,15 @@ impl InteractiveFormExecutor {
         if self.running {
             Ok(None) // Cancelado
         } else {
-            Ok(Some(self.renderer.get_values()))
+            // Validar antes de retornar
+            match self.renderer.validate_all() {
+                Ok(_) => Ok(Some(self.renderer.get_values())),
+                Err(_) => {
+                    // Hay errores de validación, no retornar valores
+                    Ok(None)
+                }
+            }
         }
-    }
-
-    /// Renderizar formulario
-    fn render(&self) -> InteractiveResult<()> {
-        let output = self.renderer.render();
-
-        execute!(
-            stdout(),
-            crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
-            crossterm::cursor::MoveTo(0, 0)
-        )
-        .map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
-
-        print!("{}", output);
-        stdout()
-            .flush()
-            .map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
-
-        Ok(())
     }
 
     /// Manejar evento de teclado
@@ -147,7 +143,7 @@ impl InteractiveFormExecutor {
             // ESC - Cancelar
             KeyCode::Esc => {
                 self.running = false;
-                return false;
+                false
             }
 
             // Tab - Siguiente campo
@@ -157,21 +153,29 @@ impl InteractiveFormExecutor {
                 } else {
                     self.renderer.focus_next();
                 }
+                true
             }
 
-            // Enter - Submit (por ahora)
+            // Enter - Submit formulario
             KeyCode::Enter => {
-                // Validar formulario
-                if let Ok(()) = self.renderer.validate_form() {
-                    self.running = false;
-                    return false;
+                // Intentar validar
+                match self.renderer.validate_all() {
+                    Ok(_) => {
+                        // Válido, salir
+                        self.running = false;
+                        false
+                    }
+                    Err(_) => {
+                        // Errores de validación, continuar editando
+                        true
+                    }
                 }
-                // Si hay errores, continuar editando
             }
 
             // Backspace - Eliminar carácter
             KeyCode::Backspace => {
-                if let Some(field_name) = self.renderer.get_focused_field().map(|s| s.to_string()) {
+                if let Some(field_name) = self.renderer.get_focused_field().map(|s| s.to_string())
+                {
                     let current_value = self
                         .renderer
                         .get_field_value(&field_name)
@@ -182,11 +186,13 @@ impl InteractiveFormExecutor {
                         let _ = self.renderer.set_field_value(&field_name, new_value);
                     }
                 }
+                true
             }
 
             // Caracteres normales
             KeyCode::Char(c) => {
-                if let Some(field_name) = self.renderer.get_focused_field().map(|s| s.to_string()) {
+                if let Some(field_name) = self.renderer.get_focused_field().map(|s| s.to_string())
+                {
                     let current_value = self
                         .renderer
                         .get_field_value(&field_name)
@@ -195,18 +201,19 @@ impl InteractiveFormExecutor {
                     let new_value = format!("{}{}", current_value, c);
                     let _ = self.renderer.set_field_value(&field_name, new_value);
                 }
+                true
             }
 
-            _ => {}
+            _ => true,
         }
-
-        true
     }
 }
 
 impl Drop for InteractiveFormExecutor {
     fn drop(&mut self) {
-        // Asegurar que el terminal se restaura
-        let _ = self.cleanup_terminal();
+        // Asegurar que el terminal se limpie incluso si hay pánico
+        let _ = disable_raw_mode();
+        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+        let _ = self.terminal.show_cursor();
     }
 }

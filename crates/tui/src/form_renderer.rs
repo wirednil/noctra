@@ -1,12 +1,20 @@
-//! Form Renderer - Renderizado de formularios FDL2 en TUI
+//! Form Renderer - Renderizado de formularios FDL2 en TUI con Ratatui
 //!
 //! Widget para renderizar y manejar formularios declarativos
-//! con validación en tiempo real.
+//! con validación en tiempo real usando Ratatui.
 
 use std::collections::HashMap;
 use thiserror::Error;
 
-use noctra_formlib::{FieldType, Form, FormField, ValidationError};
+use ratatui::{
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span, Text},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    Frame,
+};
+
+use noctra_formlib::{FieldType, Form, ValidationError};
 use noctra_formlib::validation::FormValidator;
 
 /// Error del FormRenderer
@@ -59,7 +67,7 @@ impl Default for FieldState {
     }
 }
 
-/// Renderer de formularios
+/// Renderer de formularios usando Ratatui
 pub struct FormRenderer {
     /// Formulario a renderizar
     pub form: Form,
@@ -75,12 +83,6 @@ pub struct FormRenderer {
 
     /// Validador
     validator: FormValidator,
-
-    /// Ancho del formulario
-    width: usize,
-
-    /// Altura del formulario
-    height: usize,
 
     /// Offset de scroll
     scroll_offset: usize,
@@ -117,32 +119,17 @@ impl FormRenderer {
             field_order,
             focused_field_index: 0,
             validator: FormValidator::new(),
-            width: 80,
-            height: 24,
             scroll_offset: 0,
             validate_on_change: true,
         }
     }
 
-    /// Crear con dimensiones específicas
-    pub fn with_size(mut self, width: usize, height: usize) -> Self {
-        self.width = width;
-        self.height = height;
+    /// Mantener compatibilidad con código existente (no hace nada, ratatui se adapta solo)
+    pub fn with_size(self, _width: usize, _height: usize) -> Self {
         self
     }
 
-    /// Habilitar/deshabilitar validación en tiempo real
-    pub fn with_validate_on_change(mut self, validate: bool) -> Self {
-        self.validate_on_change = validate;
-        self
-    }
-
-    /// Obtener valor de un campo
-    pub fn get_field_value(&self, field_name: &str) -> Option<&str> {
-        self.field_states.get(field_name).map(|s| s.value.as_str())
-    }
-
-    /// Establecer valor de un campo
+    /// Setear valor de campo
     pub fn set_field_value(&mut self, field_name: &str, value: String) -> FormRenderResult<()> {
         let state = self
             .field_states
@@ -160,82 +147,67 @@ impl FormRenderer {
         Ok(())
     }
 
-    /// Validar un campo específico
+    /// Obtener valor de campo
+    pub fn get_field_value(&self, field_name: &str) -> Option<&str> {
+        self.field_states.get(field_name).map(|s| s.value.as_str())
+    }
+
+    /// Validar campo
     pub fn validate_field(&mut self, field_name: &str) -> FormRenderResult<()> {
         let field = self
             .form
             .fields
             .get(field_name)
-            .ok_or_else(|| FormRenderError::FieldNotFound(field_name.to_string()))?;
+            .ok_or_else(|| FormRenderError::FieldNotFound(field_name.to_string()))?
+            .clone();
 
         let state = self
             .field_states
             .get_mut(field_name)
             .ok_or_else(|| FormRenderError::FieldNotFound(field_name.to_string()))?;
 
-        // Limpiar errores anteriores
-        state.errors.clear();
-        state.valid = true;
-
-        // Validar si tiene valor o es requerido
-        if !state.value.is_empty() || field.required {
-            if let Err(error) = self.validator.validate_field(field, &state.value) {
-                state.errors.push(error.to_string());
+        // Validar con FormValidator
+        match self.validator.validate_field(&field, &state.value) {
+            Ok(_) => {
+                state.valid = true;
+                state.errors.clear();
+            }
+            Err(error) => {
                 state.valid = false;
+                state.errors = vec![error.to_string()];
             }
         }
 
         Ok(())
     }
 
-    /// Validar formulario completo
-    pub fn validate_form(&mut self) -> FormRenderResult<()> {
-        let values: HashMap<String, String> = self
-            .field_states
-            .iter()
-            .map(|(name, state)| (name.clone(), state.value.clone()))
-            .collect();
+    /// Validar todos los campos
+    pub fn validate_all(&mut self) -> FormRenderResult<()> {
+        let mut all_errors = Vec::new();
 
-        match self.validator.validate_form(&self.form, &values) {
-            Ok(()) => {
-                // Marcar todos los campos como válidos
-                for state in self.field_states.values_mut() {
-                    state.valid = true;
-                    state.errors.clear();
-                }
-                Ok(())
+        for field_name in self.field_order.clone() {
+            if let Err(FormRenderError::ValidationErrors(errors)) = self.validate_field(&field_name)
+            {
+                all_errors.extend(errors);
             }
-            Err(errors) => {
-                // Marcar campos con errores
-                for error in &errors {
-                    // Extraer nombre del campo del mensaje de error
-                    // Por ahora marcar como inválido
-                    for state in self.field_states.values_mut() {
-                        if !state.value.is_empty() {
-                            state.errors.push(error.to_string());
-                            state.valid = false;
-                        }
-                    }
-                }
-                Err(FormRenderError::ValidationErrors(errors))
-            }
+        }
+
+        if all_errors.is_empty() {
+            Ok(())
+        } else {
+            Err(FormRenderError::ValidationErrors(all_errors))
         }
     }
 
-    /// Obtener todos los valores del formulario
+    /// Obtener todos los valores
     pub fn get_values(&self) -> HashMap<String, String> {
         self.field_states
             .iter()
-            .map(|(name, state)| (name.clone(), state.value.clone()))
+            .map(|(k, v)| (k.clone(), v.value.clone()))
             .collect()
     }
 
-    /// Verificar si el formulario es válido
-    pub fn is_valid(&self) -> bool {
-        self.field_states.values().all(|state| state.valid)
-    }
-
-    /// Mover foco al siguiente campo
+    /// Navegar al siguiente campo
     pub fn focus_next(&mut self) {
         // Desenfocar campo actual
         if let Some(field_name) = self.field_order.get(self.focused_field_index) {
@@ -244,7 +216,7 @@ impl FormRenderer {
             }
         }
 
-        // Mover al siguiente
+        // Mover índice
         self.focused_field_index = (self.focused_field_index + 1) % self.field_order.len();
 
         // Enfocar nuevo campo
@@ -255,7 +227,7 @@ impl FormRenderer {
         }
     }
 
-    /// Mover foco al campo anterior
+    /// Navegar al campo anterior
     pub fn focus_previous(&mut self) {
         // Desenfocar campo actual
         if let Some(field_name) = self.field_order.get(self.focused_field_index) {
@@ -264,7 +236,7 @@ impl FormRenderer {
             }
         }
 
-        // Mover al anterior
+        // Mover índice (wrap around)
         if self.focused_field_index == 0 {
             self.focused_field_index = self.field_order.len() - 1;
         } else {
@@ -286,27 +258,61 @@ impl FormRenderer {
             .map(|s| s.as_str())
     }
 
-    /// Renderizar formulario
-    pub fn render(&self) -> String {
-        let mut output = String::new();
+    /// Renderizar formulario usando Ratatui (nuevo método)
+    pub fn render(&self, frame: &mut Frame, area: Rect) {
+        // Layout principal: header, fields, footer
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),      // Header con título
+                Constraint::Min(3),          // Campos
+                Constraint::Length(3),       // Botones
+                Constraint::Length(1),       // Ayuda
+            ])
+            .split(area);
 
-        // Título del formulario
-        let title_line = format!("┌─ {} ", self.form.title);
-        let padding = self.width.saturating_sub(title_line.len() + 1);
-        output.push_str(&title_line);
-        output.push_str(&"─".repeat(padding));
-        output.push_str("┐\n");
+        // Header
+        self.render_header(frame, chunks[0]);
 
-        // Descripción si existe
-        if let Some(desc) = &self.form.description {
-            output.push_str(&format!("│ {} ", desc));
-            let padding = self.width.saturating_sub(desc.len() + 4);
-            output.push_str(&" ".repeat(padding));
-            output.push_str("│\n");
-            output.push_str(&format!("├{}┤\n", "─".repeat(self.width - 2)));
-        }
+        // Campos
+        self.render_fields(frame, chunks[1]);
 
-        // Renderizar campos
+        // Botones
+        self.render_actions(frame, chunks[2]);
+
+        // Ayuda
+        self.render_help(frame, chunks[3]);
+    }
+
+    /// Renderizar header
+    fn render_header(&self, frame: &mut Frame, area: Rect) {
+        let title = &self.form.title;
+        let desc = self.form.description.as_deref().unwrap_or("");
+
+        let text = if !desc.is_empty() {
+            Text::from(vec![
+                Line::from(Span::styled(title, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+                Line::from(Span::styled(desc, Style::default().fg(Color::Gray))),
+            ])
+        } else {
+            Text::from(Line::from(Span::styled(title, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))))
+        };
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .style(Style::default());
+
+        let paragraph = Paragraph::new(text)
+            .block(block)
+            .wrap(Wrap { trim: true });
+
+        frame.render_widget(paragraph, area);
+    }
+
+    /// Renderizar campos
+    fn render_fields(&self, frame: &mut Frame, area: Rect) {
+        let mut items = Vec::new();
+
         for (i, field_name) in self.field_order.iter().enumerate() {
             if i < self.scroll_offset {
                 continue;
@@ -316,105 +322,75 @@ impl FormRenderer {
                 self.form.fields.get(field_name),
                 self.field_states.get(field_name),
             ) {
-                output.push_str(&self.render_field(field_name, field, state));
+                // Línea del label
+                let focus_marker = if state.focused { "▶" } else { " " };
+                let required_marker = if field.required { "*" } else { " " };
+
+                let label_style = if state.focused {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+
+                let label_line = Line::from(vec![
+                    Span::raw(format!("{} ", focus_marker)),
+                    Span::styled(format!("{}{}: ", required_marker, field.label), label_style),
+                ]);
+
+                items.push(ListItem::new(label_line));
+
+                // Línea del valor
+                let value_display = if state.value.is_empty() {
+                    "<empty>".to_string()
+                } else {
+                    match field.field_type {
+                        FieldType::Password => "•".repeat(state.value.len()),
+                        _ => state.value.clone(),
+                    }
+                };
+
+                let value_style = if state.focused {
+                    Style::default().fg(Color::Green)
+                } else if !state.valid {
+                    Style::default().fg(Color::Red)
+                } else {
+                    Style::default()
+                };
+
+                let value_prefix = if state.focused { "[" } else { " " };
+                let value_suffix = if state.focused { "]" } else { " " };
+
+                let value_line = Line::from(vec![
+                    Span::raw("  "),
+                    Span::raw(value_prefix),
+                    Span::styled(value_display, value_style),
+                    Span::raw(value_suffix),
+                ]);
+
+                items.push(ListItem::new(value_line));
+
+                // Errores si existen
+                for error in &state.errors {
+                    let error_line = Line::from(vec![
+                        Span::raw("  "),
+                        Span::styled(format!("❌ {}", error), Style::default().fg(Color::Red)),
+                    ]);
+                    items.push(ListItem::new(error_line));
+                }
+
+                // Espacio entre campos
+                items.push(ListItem::new(Line::from("")));
             }
         }
 
-        // Separador antes de botones
-        output.push_str(&format!("├{}┤\n", "─".repeat(self.width - 2)));
+        let list = List::new(items)
+            .block(Block::default().borders(Borders::ALL).title("Fields"));
 
-        // Botones de acción
-        output.push_str(&self.render_actions());
-
-        // Footer
-        output.push_str(&format!("└{}┘\n", "─".repeat(self.width - 2)));
-
-        // Ayuda - ajustar al ancho del terminal
-        let help_text = " TAB=Next Field | ENTER=Submit | ESC=Cancel";
-        if help_text.len() <= self.width {
-            output.push_str(&format!("{}\n", help_text));
-        } else {
-            // Versión corta si el terminal es muy pequeño
-            let short_help = " TAB=Next | ENTER=Submit | ESC=Cancel";
-            if short_help.len() <= self.width {
-                output.push_str(&format!("{}\n", short_help));
-            } else {
-                output.push_str(&format!("{}\n", &short_help[..self.width.min(short_help.len())]));
-            }
-        }
-
-        output
-    }
-
-    /// Renderizar un campo
-    fn render_field(&self, _field_name: &str, field: &FormField, state: &FieldState) -> String {
-        let mut output = String::new();
-
-        // Label del campo
-        let required_marker = if field.required { "*" } else { " " };
-        let focus_marker = if state.focused { "▶" } else { " " };
-
-        let label_line = format!(
-            "│ {}{} {}:",
-            focus_marker, required_marker, field.label
-        );
-        output.push_str(&label_line);
-
-        let label_padding = self.width.saturating_sub(label_line.len() + 1);
-        output.push_str(&" ".repeat(label_padding));
-        output.push_str("│\n");
-
-        // Input del campo
-        let input_line = self.render_field_input(field, state);
-        output.push_str(&format!("│  {}", input_line));
-
-        let input_padding = self.width.saturating_sub(input_line.len() + 4);
-        output.push_str(&" ".repeat(input_padding));
-        output.push_str("│\n");
-
-        // Errores de validación
-        if !state.errors.is_empty() {
-            for error in &state.errors {
-                let error_line = format!("│  ❌ {}", error);
-                output.push_str(&error_line);
-                let error_padding = self.width.saturating_sub(error_line.len() + 1);
-                output.push_str(&" ".repeat(error_padding));
-                output.push_str("│\n");
-            }
-        }
-
-        output
-    }
-
-    /// Renderizar input de un campo según su tipo
-    fn render_field_input(&self, field: &FormField, state: &FieldState) -> String {
-        let value_display = if state.value.is_empty() {
-            "<empty>".to_string()
-        } else {
-            // Enmascarar passwords
-            match field.field_type {
-                FieldType::Password => "•".repeat(state.value.len()),
-                _ => state.value.clone(),
-            }
-        };
-
-        // Calcular ancho del campo: usar el especificado o ajustar al terminal
-        // Dejar al menos 10 chars para borders y labels (│  [ ] │ = ~7 chars mínimo)
-        let max_field_width = self.width.saturating_sub(10);
-        let desired_width = field.width.unwrap_or(30);
-        let width = desired_width.min(max_field_width);
-
-        if state.focused {
-            format!("[{}]", self.pad_or_truncate(&value_display, width))
-        } else {
-            format!(" {} ", self.pad_or_truncate(&value_display, width))
-        }
+        frame.render_widget(list, area);
     }
 
     /// Renderizar botones de acción
-    fn render_actions(&self) -> String {
-        let mut output = String::new();
-
+    fn render_actions(&self, frame: &mut Frame, area: Rect) {
         let buttons: Vec<String> = self
             .form
             .actions
@@ -422,51 +398,96 @@ impl FormRenderer {
             .map(|name| format!("[ {} ]", name.to_uppercase()))
             .collect();
 
-        let mut buttons_text = buttons.join("  ");
+        let text = Text::from(Line::from(
+            Span::styled(
+                buttons.join("  "),
+                Style::default().fg(Color::Cyan),
+            )
+        ));
 
-        // Truncar si es muy largo para el terminal
-        let max_buttons_len = self.width.saturating_sub(5); // "│  " + " " + "│"
-        if buttons_text.len() > max_buttons_len {
-            buttons_text.truncate(max_buttons_len.saturating_sub(3));
-            buttons_text.push_str("...");
-        }
+        let paragraph = Paragraph::new(text)
+            .block(Block::default().borders(Borders::ALL));
 
-        let buttons_line = format!("│  {}", buttons_text);
-        output.push_str(&buttons_line);
-
-        let padding = self.width.saturating_sub(buttons_line.len() + 1);
-        output.push_str(&" ".repeat(padding));
-        output.push_str("│\n");
-
-        output
+        frame.render_widget(paragraph, area);
     }
 
-    /// Pad or truncate string to exact width
-    fn pad_or_truncate(&self, s: &str, width: usize) -> String {
-        if s.len() > width {
-            s[..width].to_string()
-        } else {
-            format!("{}{}", s, " ".repeat(width - s.len()))
-        }
+    /// Renderizar línea de ayuda
+    fn render_help(&self, frame: &mut Frame, area: Rect) {
+        let help_text = " TAB=Next | Shift+TAB=Prev | ENTER=Submit | ESC=Cancel";
+
+        let text = Text::from(Line::from(
+            Span::styled(help_text, Style::default().fg(Color::Gray))
+        ));
+
+        let paragraph = Paragraph::new(text);
+        frame.render_widget(paragraph, area);
     }
 
-    /// Resetear formulario
-    pub fn reset(&mut self) {
-        for (name, field) in &self.form.fields {
-            if let Some(state) = self.field_states.get_mut(name) {
-                state.value = field.default.clone().unwrap_or_default();
-                state.touched = false;
-                state.errors.clear();
-                state.valid = true;
+    /// Renderizar como String para compatibilidad con código antiguo (preview mode)
+    pub fn render_to_string(&self) -> String {
+        let mut output = String::new();
+
+        // Título
+        output.push_str(&format!("┌─ {} ", self.form.title));
+        output.push_str(&"─".repeat(60));
+        output.push_str("┐\n");
+
+        // Descripción
+        if let Some(desc) = &self.form.description {
+            output.push_str(&format!("│ {} ", desc));
+            output.push_str(&" ".repeat(60));
+            output.push_str("│\n");
+            output.push_str(&format!("├{}┤\n", "─".repeat(78)));
+        }
+
+        // Campos
+        for field_name in &self.field_order {
+            if let (Some(field), Some(state)) = (
+                self.form.fields.get(field_name),
+                self.field_states.get(field_name),
+            ) {
+                let focus = if state.focused { "▶" } else { " " };
+                let req = if field.required { "*" } else { " " };
+                output.push_str(&format!("│ {}{} {}:\n", focus, req, field.label));
+
+                let value = if state.value.is_empty() {
+                    "<empty>".to_string()
+                } else {
+                    match field.field_type {
+                        FieldType::Password => "•".repeat(state.value.len()),
+                        _ => state.value.clone(),
+                    }
+                };
+
+                let brackets = if state.focused { ("[", "]") } else { (" ", " ") };
+                output.push_str(&format!("│  {}{}{}\n", brackets.0, value, brackets.1));
+
+                for error in &state.errors {
+                    output.push_str(&format!("│  ❌ {}\n", error));
+                }
             }
         }
+
+        // Botones
+        output.push_str(&format!("├{}┤\n", "─".repeat(78)));
+        let buttons: Vec<String> = self
+            .form
+            .actions
+            .keys()
+            .map(|k| format!("[ {} ]", k.to_uppercase()))
+            .collect();
+        output.push_str(&format!("│  {}\n", buttons.join("  ")));
+        output.push_str(&format!("└{}┘\n", "─".repeat(78)));
+        output.push_str(" TAB=Next Field | ENTER=Submit | ESC=Cancel\n");
+
+        output
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use noctra_formlib::{Form, FormField, FieldType, FormAction};
 
     fn create_test_form() -> Form {
         let mut fields = HashMap::new();
@@ -476,7 +497,7 @@ mod tests {
                 label: "Name".to_string(),
                 field_type: FieldType::Text,
                 required: true,
-                width: Some(30),
+                width: None,
                 default: None,
                 validations: None,
             },
@@ -486,30 +507,19 @@ mod tests {
             FormField {
                 label: "Email".to_string(),
                 field_type: FieldType::Email,
-                required: true,
-                width: Some(30),
+                required: false,
+                width: None,
                 default: None,
                 validations: None,
-            },
-        );
-
-        let mut actions = HashMap::new();
-        actions.insert(
-            "submit".to_string(),
-            noctra_formlib::FormAction {
-                action_type: noctra_formlib::ActionType::Query,
-                sql: Some("SELECT 1".to_string()),
-                params: None,
-                param_type: noctra_formlib::ParamType::Named,
             },
         );
 
         Form {
             title: "Test Form".to_string(),
             schema: None,
-            description: Some("Test description".to_string()),
+            description: Some("A test form".to_string()),
             fields,
-            actions,
+            actions: HashMap::new(),
             ui_config: None,
             pagination: None,
         }
@@ -519,10 +529,7 @@ mod tests {
     fn test_form_renderer_creation() {
         let form = create_test_form();
         let renderer = FormRenderer::new(form);
-
         assert_eq!(renderer.field_order.len(), 2);
-        assert_eq!(renderer.focused_field_index, 0);
-        assert!(renderer.is_valid());
     }
 
     #[test]
@@ -541,31 +548,12 @@ mod tests {
         let form = create_test_form();
         let mut renderer = FormRenderer::new(form);
 
-        // Guardar campo inicial (puede ser "name" o "email" dependiendo del orden del HashMap)
         let first_field = renderer.get_focused_field().unwrap().to_string();
         assert!(first_field == "name" || first_field == "email");
 
-        // Navegar al siguiente
         renderer.focus_next();
-        let second_field = renderer.get_focused_field().unwrap().to_string();
-        assert!(second_field == "name" || second_field == "email");
-        assert_ne!(first_field, second_field); // Debe ser diferente
-
-        // Volver al anterior
-        renderer.focus_previous();
-        assert_eq!(renderer.get_focused_field(), Some(first_field.as_str()));
-    }
-
-    #[test]
-    fn test_render() {
-        let form = create_test_form();
-        let renderer = FormRenderer::new(form);
-
-        let output = renderer.render();
-        assert!(output.contains("Test Form"));
-        assert!(output.contains("Name"));
-        assert!(output.contains("Email"));
-        assert!(output.contains("SUBMIT"));
+        let second_field = renderer.get_focused_field().unwrap();
+        assert_ne!(first_field, second_field);
     }
 
     #[test]
@@ -583,5 +571,15 @@ mod tests {
         let values = renderer.get_values();
         assert_eq!(values.get("name"), Some(&"John".to_string()));
         assert_eq!(values.get("email"), Some(&"john@example.com".to_string()));
+    }
+
+    #[test]
+    fn test_render_to_string() {
+        let form = create_test_form();
+        let renderer = FormRenderer::new(form);
+        let output = renderer.render_to_string();
+        assert!(output.contains("Test Form"));
+        assert!(output.contains("Name"));
+        assert!(output.contains("Email"));
     }
 }

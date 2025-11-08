@@ -478,7 +478,7 @@ impl NoctraApp {
             }
 
             // Validar
-            renderer.validate_form()?;
+            renderer.validate_all()?;
             println!("✅ Formulario validado correctamente");
 
             // Mostrar valores
@@ -500,7 +500,7 @@ impl NoctraApp {
             println!("Presiona cualquier tecla para continuar...");
             std::thread::sleep(std::time::Duration::from_secs(2));
 
-            let mut executor = InteractiveFormExecutor::new(form);
+            let mut executor = InteractiveFormExecutor::new(form)?;
             match executor.run()? {
                 Some(values) => {
                     println!("\n✅ Formulario completado");
@@ -571,8 +571,8 @@ impl NoctraApp {
             }
         }
 
-        // Renderizar
-        println!("\n{}", renderer.render());
+        // Renderizar como string para preview
+        println!("\n{}", renderer.render_to_string());
 
         println!("\n✨ Este es un preview del formulario.");
         println!("   Usa 'noctra form exec {}' para ejecutarlo.", args.file.display());
