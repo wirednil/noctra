@@ -11,8 +11,8 @@ pub mod output;
 pub mod repl;
 
 pub use app::{build_cli as build_app, NoctraApp as App};
-pub use cli::{build_cli, NoctraApp, NoctraArgs};
+pub use cli::{build_cli, NoctraApp, NoctraArgs, ReplArgs};
 pub use commands::{execute_command, CommandContext, CommandResult};
 pub use config::{CliConfig, GlobalConfig};
-pub use output::{CsvFormatter, JsonFormatter, OutputFormatter, TableFormatter};
+pub use output::{format_result_set, CsvFormatter, JsonFormatter, OutputFormatter, TableFormatter};
 pub use repl::{Repl, ReplHandler};

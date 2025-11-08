@@ -279,7 +279,21 @@ impl Executor {
     /// Ejecutar query RQL (parseado)
     pub fn execute_rql(&self, session: &Session, rql_query: RqlQuery) -> Result<ResultSet> {
         let sql = self.process_templates(&rql_query.sql, session)?;
-        self.backend.execute_query(&sql, &rql_query.parameters)
+
+        // Detectar si es un statement (INSERT/UPDATE/DELETE/CREATE/DROP/ALTER) o query (SELECT)
+        let trimmed = sql.trim().to_uppercase();
+        let is_statement = trimmed.starts_with("INSERT")
+            || trimmed.starts_with("UPDATE")
+            || trimmed.starts_with("DELETE")
+            || trimmed.starts_with("CREATE")
+            || trimmed.starts_with("DROP")
+            || trimmed.starts_with("ALTER");
+
+        if is_statement {
+            self.backend.execute_statement(&sql, &rql_query.parameters)
+        } else {
+            self.backend.execute_query(&sql, &rql_query.parameters)
+        }
     }
 
     /// Ejecutar query SQL directo
@@ -402,5 +416,198 @@ fn map_sqlite_value_to_noctra(value: rusqlite::types::ValueRef<'_>) -> Result<Va
         }
         rusqlite::types::ValueRef::Blob(b) => Ok(Value::Text(format!("Blob({} bytes)", b.len()))),
         rusqlite::types::ValueRef::Real(f) => Ok(Value::Float(f)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::Value;
+
+    #[test]
+    fn test_sqlite_backend_creation() {
+        // Test in-memory database
+        let backend = SqliteBackend::with_file(":memory:");
+        assert!(backend.is_ok());
+
+        // Test executor creation
+        let backend = backend.unwrap();
+        let executor = Executor::new(Arc::new(backend));
+
+        // Verify executor works by running a simple query
+        let session = Session::new();
+        let query = RqlQuery::new("SELECT 1", HashMap::new());
+        let result = executor.execute_rql(&session, query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_executor_select_query() {
+        let backend = SqliteBackend::with_file(":memory:").unwrap();
+        let executor = Executor::new(Arc::new(backend));
+        let session = Session::new();
+
+        let query = RqlQuery::new("SELECT 1 AS num, 'test' AS text", HashMap::new());
+        let result = executor.execute_rql(&session, query);
+
+        assert!(result.is_ok());
+        let result_set = result.unwrap();
+        assert_eq!(result_set.columns.len(), 2);
+        assert_eq!(result_set.rows.len(), 1);
+        assert_eq!(result_set.columns[0].name, "num");
+        assert_eq!(result_set.columns[1].name, "text");
+    }
+
+    #[test]
+    fn test_executor_insert_statement() {
+        let backend = SqliteBackend::with_file(":memory:").unwrap();
+        let executor = Executor::new(Arc::new(backend));
+        let session = Session::new();
+
+        // Create table
+        let create_query = RqlQuery::new(
+            "CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)",
+            HashMap::new(),
+        );
+        executor.execute_rql(&session, create_query).unwrap();
+
+        // Insert data
+        let insert_query = RqlQuery::new(
+            "INSERT INTO test (id, name) VALUES (1, 'Alice')",
+            HashMap::new(),
+        );
+        let result = executor.execute_rql(&session, insert_query);
+
+        assert!(result.is_ok());
+        let result_set = result.unwrap();
+        assert_eq!(result_set.rows_affected, Some(1));
+        assert!(result_set.last_insert_rowid.is_some());
+    }
+
+    #[test]
+    fn test_executor_update_statement() {
+        let backend = SqliteBackend::with_file(":memory:").unwrap();
+        let executor = Executor::new(Arc::new(backend));
+        let session = Session::new();
+
+        // Setup
+        executor
+            .execute_rql(
+                &session,
+                RqlQuery::new(
+                    "CREATE TABLE test (id INTEGER, value TEXT)",
+                    HashMap::new(),
+                ),
+            )
+            .unwrap();
+        executor
+            .execute_rql(
+                &session,
+                RqlQuery::new("INSERT INTO test VALUES (1, 'old')", HashMap::new()),
+            )
+            .unwrap();
+
+        // Update
+        let update_query = RqlQuery::new("UPDATE test SET value = 'new' WHERE id = 1", HashMap::new());
+        let result = executor.execute_rql(&session, update_query);
+
+        assert!(result.is_ok());
+        let result_set = result.unwrap();
+        assert_eq!(result_set.rows_affected, Some(1));
+    }
+
+    #[test]
+    fn test_executor_delete_statement() {
+        let backend = SqliteBackend::with_file(":memory:").unwrap();
+        let executor = Executor::new(Arc::new(backend));
+        let session = Session::new();
+
+        // Setup
+        executor
+            .execute_rql(
+                &session,
+                RqlQuery::new("CREATE TABLE test (id INTEGER)", HashMap::new()),
+            )
+            .unwrap();
+        executor
+            .execute_rql(
+                &session,
+                RqlQuery::new("INSERT INTO test VALUES (1), (2), (3)", HashMap::new()),
+            )
+            .unwrap();
+
+        // Delete
+        let delete_query = RqlQuery::new("DELETE FROM test WHERE id > 1", HashMap::new());
+        let result = executor.execute_rql(&session, delete_query);
+
+        assert!(result.is_ok());
+        let result_set = result.unwrap();
+        assert_eq!(result_set.rows_affected, Some(2));
+    }
+
+    #[test]
+    fn test_executor_create_table() {
+        let backend = SqliteBackend::with_file(":memory:").unwrap();
+        let executor = Executor::new(Arc::new(backend));
+        let session = Session::new();
+
+        let create_query = RqlQuery::new(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL)",
+            HashMap::new(),
+        );
+        let result = executor.execute_rql(&session, create_query);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parameter_mapping() {
+        let mut params = HashMap::new();
+        params.insert("key1".to_string(), Value::Integer(42));
+        params.insert("key2".to_string(), Value::Text("hello".to_string()));
+        params.insert("key3".to_string(), Value::Boolean(true));
+        params.insert("key4".to_string(), Value::Float(3.14));
+        params.insert("key5".to_string(), Value::Null);
+
+        let result = map_parameters_to_sqlite(&params);
+        assert!(result.is_ok());
+
+        let mapped = result.unwrap();
+        assert_eq!(mapped.len(), 5);
+    }
+
+    #[test]
+    fn test_backend_info() {
+        let backend = SqliteBackend::with_file(":memory:").unwrap();
+        let executor = Executor::new(Arc::new(backend));
+
+        let info = executor.backend_info();
+        assert_eq!(info.name, "SQLite");
+        assert!(!info.version.is_empty());
+        assert!(!info.features.is_empty());
+    }
+
+    #[test]
+    fn test_rql_query_builder() {
+        let query = RqlQuery::sql("SELECT * FROM users");
+        assert_eq!(query.sql, "SELECT * FROM users");
+        assert!(query.parameters.is_empty());
+
+        let mut params = HashMap::new();
+        params.insert("id".to_string(), Value::Integer(1));
+        let query = RqlQuery::new("SELECT * FROM users WHERE id = :id", params);
+        assert_eq!(query.parameters.len(), 1);
+    }
+
+    #[test]
+    fn test_executor_invalid_sql() {
+        let backend = SqliteBackend::with_file(":memory:").unwrap();
+        let executor = Executor::new(Arc::new(backend));
+        let session = Session::new();
+
+        let invalid_query = RqlQuery::new("INVALID SQL SYNTAX HERE", HashMap::new());
+        let result = executor.execute_rql(&session, invalid_query);
+
+        assert!(result.is_err());
     }
 }
