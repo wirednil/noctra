@@ -75,27 +75,32 @@ El Milestone 1 fue completado al 100% con los siguientes logros:
 ### ✅ Completado Adicionalmente
 
 #### Renderer de Formularios
-- [x] Widget FormRenderer en TUI ✅
+- [x] Widget FormRenderer en TUI con **Ratatui** ✅
+  - Layout automático con constraints (Header/Fields/Actions/Help)
+  - Widgets: List, Paragraph, Block, Borders
+  - Manejo correcto de unicode y box-drawing chars
 - [x] Renderizado de campos según tipo ✅
 - [x] Input interactivo de campos ✅
 - [x] Visualización de errores de validación ✅
-- [x] Renderizado responsivo adaptado al tamaño del terminal ✅
-  - Detección automática de dimensiones (mínimo 80x24)
-  - Ajuste dinámico de anchos de campos
-  - Truncamiento inteligente de botones y ayuda
+- [x] Renderizado 100% responsivo ✅
+  - Ratatui se adapta automáticamente al tamaño del terminal
+  - Resize dinámico sin distorsión
+  - Sin cálculos manuales de anchos
 
 #### Integración CLI
 - [x] Comando `noctra form load <file>` ✅
 - [x] Comando `noctra form exec <file>` ✅
-  - Modo interactivo con TUI completo (crossterm)
-  - Event loop con captura de teclado
+  - Modo interactivo con TUI completo usando **Ratatui + Crossterm**
+  - Terminal::new(CrosstermBackend) con raw mode
+  - Event loop con terminal.draw(|frame| renderer.render(frame))
   - Navegación TAB/Shift+TAB entre campos
   - Edición de texto en tiempo real
   - Validación durante la entrada
   - Submit con ENTER, cancelar con ESC
+  - Drop trait para limpieza segura del terminal
 - [x] Comando `noctra form preview <file>` ✅
 - [x] Subcomandos con argumentos completos ✅
-- [x] InteractiveFormExecutor con raw terminal mode ✅
+- [x] InteractiveFormExecutor profesional con Ratatui ✅
 
 #### Tests
 - [x] Tests de FormGraph (carga, validación, navegación) ✅
@@ -416,12 +421,13 @@ Cuando esté completo:
 4. **Stack de ventanas:** El patrón LIFO para ventanas simplifica la navegación
 5. **Tests desde el inicio:** Los tests de NWM y FormGraph detectaron bugs temprano
 6. **Interactividad real:** Un TUI completo requiere raw mode terminal + event loop, no solo renderizado
+7. **No reinventar la rueda:** Usar Ratatui en lugar de renderizado manual evita problemas de unicode, anchos y responsividad
 
 ---
 
 **Estado:** ✅ MILESTONE 2 COMPLETADO (100%)
 **Branch:** `claude/milestone-2-forms-tui-011CUoxFd4r17gcN7w2ofw21`
-**Último commit:** `63f1831 - fix(m2): Arreglar renderizado distorsionado con detección de tamaño de terminal`
+**Último commit:** `3c41d68 - refactor(m2): Migrar FormRenderer e InteractiveFormExecutor a Ratatui`
 **Pull Request:** https://github.com/wirednil/noctra/pull/new/claude/milestone-2-forms-tui-011CUoxFd4r17gcN7w2ofw21
 
 🎉 ¡Noctra ahora tiene un sistema completo de formularios declarativos y TUI profesional!
