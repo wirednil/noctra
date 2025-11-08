@@ -83,8 +83,15 @@ El Milestone 1 fue completado al 100% con los siguientes logros:
 #### Integración CLI
 - [x] Comando `noctra form load <file>` ✅
 - [x] Comando `noctra form exec <file>` ✅
+  - Modo interactivo con TUI completo (crossterm)
+  - Event loop con captura de teclado
+  - Navegación TAB/Shift+TAB entre campos
+  - Edición de texto en tiempo real
+  - Validación durante la entrada
+  - Submit con ENTER, cancelar con ESC
 - [x] Comando `noctra form preview <file>` ✅
 - [x] Subcomandos con argumentos completos ✅
+- [x] InteractiveFormExecutor con raw terminal mode ✅
 
 #### Tests
 - [x] Tests de FormGraph (carga, validación, navegación) ✅
@@ -404,12 +411,13 @@ Cuando esté completo:
 3. **Validación temprana:** Validar el FormGraph al cargar previene errores en runtime
 4. **Stack de ventanas:** El patrón LIFO para ventanas simplifica la navegación
 5. **Tests desde el inicio:** Los tests de NWM y FormGraph detectaron bugs temprano
+6. **Interactividad real:** Un TUI completo requiere raw mode terminal + event loop, no solo renderizado
 
 ---
 
 **Estado:** ✅ MILESTONE 2 COMPLETADO (100%)
 **Branch:** `claude/milestone-2-forms-tui-011CUoxFd4r17gcN7w2ofw21`
-**Último commit:** (pendiente)
+**Último commit:** `ab31cf8 - feat(m2): Implementar ejecución interactiva de formularios con TUI completo`
 **Pull Request:** https://github.com/wirednil/noctra/pull/new/claude/milestone-2-forms-tui-011CUoxFd4r17gcN7w2ofw21
 
 🎉 ¡Noctra ahora tiene un sistema completo de formularios declarativos y TUI profesional!
