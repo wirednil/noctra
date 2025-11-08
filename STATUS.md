@@ -79,6 +79,10 @@ El Milestone 1 fue completado al 100% con los siguientes logros:
 - [x] Renderizado de campos según tipo ✅
 - [x] Input interactivo de campos ✅
 - [x] Visualización de errores de validación ✅
+- [x] Renderizado responsivo adaptado al tamaño del terminal ✅
+  - Detección automática de dimensiones (mínimo 80x24)
+  - Ajuste dinámico de anchos de campos
+  - Truncamiento inteligente de botones y ayuda
 
 #### Integración CLI
 - [x] Comando `noctra form load <file>` ✅
@@ -417,7 +421,7 @@ Cuando esté completo:
 
 **Estado:** ✅ MILESTONE 2 COMPLETADO (100%)
 **Branch:** `claude/milestone-2-forms-tui-011CUoxFd4r17gcN7w2ofw21`
-**Último commit:** `ab31cf8 - feat(m2): Implementar ejecución interactiva de formularios con TUI completo`
+**Último commit:** `63f1831 - fix(m2): Arreglar renderizado distorsionado con detección de tamaño de terminal`
 **Pull Request:** https://github.com/wirednil/noctra/pull/new/claude/milestone-2-forms-tui-011CUoxFd4r17gcN7w2ofw21
 
 🎉 ¡Noctra ahora tiene un sistema completo de formularios declarativos y TUI profesional!
