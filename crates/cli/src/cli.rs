@@ -48,6 +48,10 @@ pub enum NoctraSubcommand {
     #[command(name = "repl")]
     Repl(ReplArgs),
 
+    /// Modo TUI completo (estilo 4GL retro)
+    #[command(name = "tui")]
+    Tui(TuiArgs),
+
     /// Ejecutar script batch
     #[command(name = "batch")]
     Batch(BatchArgs),
@@ -83,6 +87,18 @@ pub struct ReplArgs {
     /// Historial personalizado
     #[arg(long, value_name = "FILE")]
     pub history: Option<PathBuf>,
+}
+
+/// Argumentos del TUI
+#[derive(Args, Debug, Clone, Default)]
+pub struct TuiArgs {
+    /// Cargar script SQL al iniciar
+    #[arg(short, long, value_name = "FILE")]
+    pub load: Option<PathBuf>,
+
+    /// Esquema/base de datos inicial
+    #[arg(short, long, value_name = "SCHEMA")]
+    pub schema: Option<String>,
 }
 
 /// Argumentos de batch processing
@@ -316,6 +332,7 @@ impl NoctraApp {
         let result = match command {
             Some(cmd) => match cmd {
                 NoctraSubcommand::Repl(args) => self.run_repl(args).await,
+                NoctraSubcommand::Tui(args) => self.run_tui(args).await,
                 NoctraSubcommand::Batch(args) => self.run_batch(args).await,
                 NoctraSubcommand::Form(args) => self.run_form(args).await,
                 NoctraSubcommand::Query(args) => self.run_query(args).await,
@@ -338,6 +355,7 @@ impl NoctraApp {
 
         match command {
             Repl(args) => self.run_repl(args).await,
+            Tui(args) => self.run_tui(args).await,
             Batch(args) => self.run_batch(args).await,
             Form(args) => self.run_form(args).await,
             Query(args) => self.run_query(args).await,
@@ -360,6 +378,24 @@ impl NoctraApp {
         let mut repl = crate::repl::Repl::new(self.config, args)?;
         repl.run().await?;
 
+        Ok(())
+    }
+
+    /// Ejecutar TUI completo
+    async fn run_tui(self, _args: TuiArgs) -> Result<(), Box<dyn std::error::Error>> {
+        use noctra_tui::NoctraTui;
+
+        println!("🖥️  Noctra TUI v0.1.0 - Modo Terminal Interactivo");
+        println!("Iniciando interfaz...\n");
+
+        // Pequeña pausa para que el usuario vea el mensaje
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        // Crear y ejecutar el TUI
+        let mut tui = NoctraTui::new()?;
+        tui.run()?;
+
+        println!("\n👋 ¡Noctra finalizado correctamente!");
         Ok(())
     }
 
