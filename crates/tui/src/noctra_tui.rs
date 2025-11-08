@@ -183,7 +183,7 @@ impl<'a> NoctraTui<'a> {
         dialog_options: &[String],
         dialog_selected: usize,
     ) {
-        let size = frame.size();
+        let size = frame.area();
 
         // Layout principal: Header + Workspace + Separator + Shortcuts
         let chunks = Layout::default()
@@ -271,8 +271,8 @@ impl<'a> NoctraTui<'a> {
     }
 
     /// Renderizar modo Command (editor de SQL)
-    fn render_command_mode(frame: &mut Frame, area: Rect, command_editor: &mut TextArea) {
-        frame.render_widget(command_editor.widget(), area);
+    fn render_command_mode(frame: &mut Frame, area: Rect, command_editor: &TextArea) {
+        frame.render_widget(command_editor, area);
     }
 
     /// Renderizar modo Result (tabla de resultados)
@@ -299,14 +299,13 @@ impl<'a> NoctraTui<'a> {
                 .map(|_| Constraint::Percentage((100 / results.columns.len().max(1)) as u16))
                 .collect();
 
-            let table = Table::new(rows)
+            let table = Table::new(rows, col_widths)
                 .header(header)
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
                         .border_style(Style::default().fg(Color::Green)),
                 )
-                .widths(&col_widths)
                 .style(Style::default().fg(Color::White));
 
             frame.render_widget(table, area);
@@ -360,7 +359,7 @@ impl<'a> NoctraTui<'a> {
             frame.render_widget(dialog_bg, dialog_area);
 
             // Contenido interno
-            let inner = dialog_area.inner(&ratatui::layout::Margin::new(2, 1));
+            let inner = dialog_area.inner(ratatui::layout::Margin::new(2, 1));
 
             let chunks = Layout::default()
                 .direction(Direction::Vertical)

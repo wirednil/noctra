@@ -95,7 +95,7 @@ impl InteractiveFormExecutor {
             // Renderizar usando ratatui
             self.terminal
                 .draw(|frame| {
-                    self.renderer.render(frame, frame.size());
+                    self.renderer.render(frame, frame.area());
                 })
                 .map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
 
