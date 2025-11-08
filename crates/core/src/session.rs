@@ -194,9 +194,10 @@ impl Session {
 }
 
 /// Estados posibles de una sesión
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub enum SessionState {
     /// Sesión activa
+    #[default]
     Active,
 
     /// Sesión en espera
@@ -210,12 +211,6 @@ pub enum SessionState {
 
     /// Sesión suspendida
     Suspended,
-}
-
-impl Default for SessionState {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 /// Información de debug de una sesión
