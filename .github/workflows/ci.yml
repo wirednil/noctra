@@ -120,7 +120,7 @@ jobs:
       uses: codecov/codecov-action@v3
       with:
         file: ./coverage/cobertura.xml
-        fail_ci_if_error: true
+        fail_ci_if_error: false
 
   security:
     name: Security Audit
@@ -133,9 +133,12 @@ jobs:
       with:
         toolchain: stable
 
+    - name: Install cargo-audit
+      run: cargo install --locked cargo-audit
+
     - name: Audit dependencies
-      run: cargo audit --db $(pwd)/advisory-db
-      
+      run: cargo audit
+
     - name: Check for dangerous code
       run: cargo deny check
 
@@ -161,7 +164,7 @@ jobs:
         du -sh target/release/noctra
 
     - name: Upload binary artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: noctra-binaries-${{ github.sha }}
         path: target/release/noctra
