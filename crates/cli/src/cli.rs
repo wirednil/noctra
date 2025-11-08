@@ -1,8 +1,8 @@
 //! CLI principal de Noctra usando clap
 
-use clap::{Parser, Subcommand, Args, ValueEnum};
+use crate::config::CliConfig;
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
-use crate::config::{CliConfig, GlobalConfig};
 
 /// Argumentos del CLI principal
 #[derive(Parser, Debug)]
@@ -15,27 +15,27 @@ pub struct NoctraArgs {
     /// Archivo de configuración personalizado
     #[arg(short, long, value_name = "FILE")]
     pub config: Option<PathBuf>,
-    
+
     /// Base de datos SQLite (archivo)
-    #[arg(short, long, value_name = "FILE")]
+    #[arg(long, value_name = "FILE")]
     pub database: Option<PathBuf>,
-    
+
     /// Base de datos en memoria
     #[arg(short, long)]
     pub memory: bool,
-    
+
     /// Modo verbose
     #[arg(short, long)]
     pub verbose: bool,
-    
+
     /// Modo debug
-    #[arg(short, long)]
+    #[arg(long)]
     pub debug: bool,
-    
+
     /// Activar colores
     #[arg(long, value_enum)]
     pub color: Option<ColorChoice>,
-    
+
     /// Comando a ejecutar
     #[command(subcommand)]
     pub command: Option<NoctraSubcommand>,
@@ -47,143 +47,143 @@ pub enum NoctraSubcommand {
     /// Modo interactivo REPL
     #[command(name = "repl")]
     Repl(ReplArgs),
-    
+
     /// Ejecutar script batch
     #[command(name = "batch")]
     Batch(BatchArgs),
-    
+
     /// Ejecutar formulario
     #[command(name = "form")]
     Form(FormArgs),
-    
+
     /// Ejecutar query directo
     #[command(name = "query")]
     Query(QueryArgs),
-    
+
     /// Información del sistema
     #[command(name = "info")]
     Info(InfoArgs),
-    
+
     /// Configuración
     #[command(name = "config")]
     Config(ConfigArgs),
 }
 
 /// Argumentos del REPL
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone, Default)]
 pub struct ReplArgs {
     /// Prompt personalizado
     #[arg(short, long, value_name = "PROMPT")]
     pub prompt: Option<String>,
-    
+
     /// No cargar archivo de historial
     #[arg(long)]
     pub no_history: bool,
-    
+
     /// Historial personalizado
     #[arg(long, value_name = "FILE")]
     pub history: Option<PathBuf>,
 }
 
 /// Argumentos de batch processing
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct BatchArgs {
     /// Archivo de script RQL
     #[arg(required = true, value_name = "FILE")]
     pub script: PathBuf,
-    
+
     /// Parámetros del script
     #[arg(short, long, value_name = "KEY=VALUE")]
     pub param: Vec<KeyValueArg>,
-    
+
     /// Archivo de salida
     #[arg(short, long, value_name = "FILE")]
     pub output: Option<PathBuf>,
-    
+
     /// Formato de salida
     #[arg(short, long, value_enum)]
     pub format: Option<OutputFormat>,
-    
+
     /// Modo silencioso
     #[arg(short, long)]
     pub quiet: bool,
-    
+
     /// Continuar en caso de error
     #[arg(long)]
     pub continue_on_error: bool,
 }
 
 /// Argumentos de formulario
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct FormArgs {
     /// Archivo de formulario TOML
     #[arg(required = true, value_name = "FILE")]
     pub file: PathBuf,
-    
+
     /// Parámetros del formulario
     #[arg(short, long, value_name = "KEY=VALUE")]
     pub param: Vec<KeyValueArg>,
-    
+
     /// Output file
     #[arg(short, long, value_name = "FILE")]
     pub output: Option<PathBuf>,
-    
+
     /// No ejecutar formulario (solo validación)
     #[arg(long)]
     pub validate_only: bool,
 }
 
 /// Argumentos de query directo
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct QueryArgs {
     /// Query SQL a ejecutar
     #[arg(required = true, value_name = "SQL")]
     pub query: String,
-    
+
     /// Parámetros del query
     #[arg(short, long, value_name = "KEY=VALUE")]
     pub param: Vec<KeyValueArg>,
-    
+
     /// Output file
     #[arg(short, long, value_name = "FILE")]
     pub output: Option<PathBuf>,
-    
+
     /// Formato de salida
     #[arg(short, long, value_enum)]
     pub format: Option<OutputFormat>,
-    
+
     /// Solo mostrar el SQL generado
     #[arg(long)]
     pub dry_run: bool,
 }
 
 /// Argumentos de información
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct InfoArgs {
     /// Mostrar información de la base de datos
     #[arg(short, long)]
     pub database: bool,
-    
+
     /// Mostrar información del sistema
     #[arg(short, long)]
     pub system: bool,
-    
+
     /// Mostrar versión
     #[arg(short, long)]
     pub version: bool,
 }
 
 /// Argumentos de configuración
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ConfigArgs {
     /// Mostrar configuración actual
     #[arg(short, long)]
     pub show: bool,
-    
+
     /// Editar configuración
     #[arg(short, long)]
     pub edit: bool,
-    
+
     /// Resetear configuración
     #[arg(short, long)]
     pub reset: bool,
@@ -236,6 +236,14 @@ impl KeyValueArg {
     }
 }
 
+impl std::str::FromStr for KeyValueArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s)
+    }
+}
+
 /// Aplicación principal de Noctra
 #[derive(Debug)]
 pub struct NoctraApp {
@@ -249,21 +257,33 @@ impl NoctraApp {
         let config = load_config(&args)?;
         Ok(Self { args, config })
     }
-    
+
     /// Ejecutar aplicación
-    pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
-        let result = match self.args.command {
-            Some(command) => self.run_command(command).await,
+    pub async fn run(mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let command = self.args.command.take();
+        let result = match command {
+            Some(cmd) => match cmd {
+                NoctraSubcommand::Repl(args) => self.run_repl(args).await,
+                NoctraSubcommand::Batch(args) => self.run_batch(args).await,
+                NoctraSubcommand::Form(args) => self.run_form(args).await,
+                NoctraSubcommand::Query(args) => self.run_query(args).await,
+                NoctraSubcommand::Info(args) => self.run_info(args),
+                NoctraSubcommand::Config(args) => self.run_config(args),
+            },
             None => self.run_interactive().await,
         };
-        
+
         result
     }
-    
+
     /// Ejecutar comando específico
-    async fn run_command(self, command: NoctraSubcommand) -> Result<(), Box<dyn std::error::Error>> {
+    #[allow(dead_code)]
+    async fn run_command(
+        self,
+        command: NoctraSubcommand,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         use NoctraSubcommand::*;
-        
+
         match command {
             Repl(args) => self.run_repl(args).await,
             Batch(args) => self.run_batch(args).await,
@@ -273,98 +293,98 @@ impl NoctraApp {
             Config(args) => self.run_config(args),
         }
     }
-    
+
     /// Ejecutar modo interactivo
     async fn run_interactive(self) -> Result<(), Box<dyn std::error::Error>> {
         self.run_repl(ReplArgs::default()).await
     }
-    
+
     /// Ejecutar REPL
     async fn run_repl(self, args: ReplArgs) -> Result<(), Box<dyn std::error::Error>> {
         println!("🐍 Noctra v0.1.0 - Entorno SQL Interactivo");
         println!("Escribe 'help' para comandos disponibles o 'quit' para salir.");
-        
+
         // Crear e iniciar REPL
-        let repl = crate::repl::Repl::new(self.config, args)?;
+        let mut repl = crate::repl::Repl::new(self.config, args)?;
         repl.run().await?;
-        
+
         Ok(())
     }
-    
+
     /// Ejecutar batch processing
     async fn run_batch(self, args: BatchArgs) -> Result<(), Box<dyn std::error::Error>> {
-        let script_content = std::fs::read_to_string(&args.script)
+        let _script_content = std::fs::read_to_string(&args.script)
             .map_err(|e| format!("Error reading script file: {}", e))?;
-        
+
         println!("📜 Ejecutando script: {}", args.script.display());
-        
+
         // Crear parámetros desde argumentos
         let mut parameters = std::collections::HashMap::new();
         for param in args.param {
             parameters.insert(param.key, param.value);
         }
-        
+
         // TODO: Implementar ejecución de script
         println!("⚠️  Script processing no implementado aún");
-        
+
         Ok(())
     }
-    
+
     /// Ejecutar formulario
     async fn run_form(self, args: FormArgs) -> Result<(), Box<dyn std::error::Error>> {
         println!("📋 Ejecutando formulario: {}", args.file.display());
-        
+
         // Validar formulario
         if !args.file.exists() {
             return Err(format!("Form file not found: {}", args.file.display()).into());
         }
-        
+
         if args.validate_only {
             println!("✅ Formulario válido");
             return Ok(());
         }
-        
+
         // TODO: Implementar ejecución de formulario
         println!("⚠️  Form execution no implementado aún");
-        
+
         Ok(())
     }
-    
+
     /// Ejecutar query directo
     async fn run_query(self, args: QueryArgs) -> Result<(), Box<dyn std::error::Error>> {
         println!("🔍 Ejecutando query...");
-        
+
         if args.dry_run {
             println!("📝 SQL generado:");
             println!("{}", args.query);
             return Ok(());
         }
-        
+
         // TODO: Implementar ejecución de query
         println!("⚠️  Query execution no implementado aún");
-        
+
         Ok(())
     }
-    
+
     /// Ejecutar comando info
     fn run_info(self, args: InfoArgs) -> Result<(), Box<dyn std::error::Error>> {
         if args.version {
             println!("Noctra v0.1.0");
         }
-        
+
         if args.system {
             self.show_system_info();
         }
-        
+
         if args.database {
             self.show_database_info();
         }
-        
+
         Ok(())
     }
-    
+
     /// Ejecutar comando config
-    fn run_config(self, args: ConfigArgs) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_config(mut self, args: ConfigArgs) -> Result<(), Box<dyn std::error::Error>> {
         if args.show {
             self.show_config();
         } else if args.edit {
@@ -374,21 +394,24 @@ impl NoctraApp {
         } else {
             println!("Usa --help para ver opciones de configuración");
         }
-        
+
         Ok(())
     }
-    
+
     /// Mostrar información del sistema
     fn show_system_info(&self) {
         println!("📊 Información del Sistema:");
         println!("  Versión de Noctra: {}", env!("CARGO_PKG_VERSION"));
         println!("  Sistema Operativo: {}", std::env::consts::OS);
         println!("  Arquitectura: {}", std::env::consts::ARCH);
-        
+
         // Mostrar información de Rust
-        println!("  Rust Version: {}", std::env::var("RUSTC_VERSION").unwrap_or_else(|_| "Unknown".to_string()));
+        println!(
+            "  Rust Version: {}",
+            std::env::var("RUSTC_VERSION").unwrap_or_else(|_| "Unknown".to_string())
+        );
     }
-    
+
     /// Mostrar información de la base de datos
     fn show_database_info(&self) {
         println!("💾 Información de la Base de Datos:");
@@ -397,40 +420,43 @@ impl NoctraApp {
         println!("  Timeout: {}s", self.config.database.connection_timeout);
         println!("  Pool Size: {}", self.config.database.pool_size);
     }
-    
+
     /// Mostrar configuración actual
     fn show_config(&self) {
         println!("⚙️  Configuración Actual:");
         println!("  Database: {:?}", self.config.database.backend_type);
         println!("  Connection: {}", self.config.database.connection_string);
         println!("  Default Timeout: {}s", self.config.global.default_timeout);
-        println!("  Default Format: {:?}", self.config.global.default_output_format);
+        println!(
+            "  Default Format: {:?}",
+            self.config.global.default_output_format
+        );
         println!("  Color Mode: {:?}", self.config.global.color_mode);
         println!("  Theme: {:?}", self.config.global.theme);
     }
-    
+
     /// Editar configuración
     fn edit_config(&self) -> Result<(), Box<dyn std::error::Error>> {
         let config_path = CliConfig::default_config_path()?;
         println!("Editando configuración en: {}", config_path.display());
-        
+
         // Crear directorio si no existe
         if let Some(parent) = config_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
+
         // Guardar configuración por defecto si no existe
         if !config_path.exists() {
             self.config.save_to_file(&config_path)?;
             println!("📝 Archivo de configuración creado");
         }
-        
+
         // TODO: Abrir editor externo
         println!("⚠️  Editor configuration no implementado aún");
-        
+
         Ok(())
     }
-    
+
     /// Resetear configuración
     fn reset_config(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.config = CliConfig::default();
@@ -456,10 +482,10 @@ fn load_config(args: &NoctraArgs) -> Result<CliConfig, Box<dyn std::error::Error
             Err(_) => CliConfig::default(),
         }
     };
-    
+
     // Aplicar overrides de argumentos CLI
     apply_cli_overrides(&mut config, args);
-    
+
     config.validate()?;
     Ok(config)
 }
@@ -474,11 +500,11 @@ fn apply_cli_overrides(config: &mut CliConfig, args: &NoctraArgs) {
         config.database.backend_type = crate::config::BackendType::Sqlite;
         config.database.connection_string = db_path.to_string_lossy().to_string();
     }
-    
+
     // Verbose/Debug
     config.global.verbose = args.verbose;
     config.global.debug = args.debug;
-    
+
     // Color mode
     if let Some(color_choice) = &args.color {
         config.global.color_mode = match color_choice {
@@ -491,5 +517,6 @@ fn apply_cli_overrides(config: &mut CliConfig, args: &NoctraArgs) {
 
 /// Construir parser de CLI
 pub fn build_cli() -> clap::Command {
+    use clap::CommandFactory;
     NoctraArgs::command()
 }

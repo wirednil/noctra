@@ -15,6 +15,7 @@ use crate::error::Result;
 
 /// Cache de consultas preparadas
 #[derive(Debug)]
+#[derive(Clone)]
 pub struct QueryCache {
     cache: Arc<RwLock<LruCache<String, CachedQuery>>>,
     max_size: usize,
@@ -255,6 +256,7 @@ impl ConnectionPool {
 
 /// Rate limiter para endpoints API
 #[derive(Debug)]
+#[derive(Clone)]
 pub struct RateLimiter {
     tokens: Arc<Mutex<BTreeMap<String, usize>>>,
     max_tokens: usize,
@@ -305,6 +307,7 @@ impl RateLimiter {
 
 /// Caching de metadatos de base de datos
 #[derive(Debug)]
+#[derive(Clone)]
 pub struct DatabaseMetadataCache {
     schemas: Arc<RwLock<HashMap<String, SchemaInfo>>>,
     tables: Arc<RwLock<HashMap<String, Vec<TableInfo>>>>,

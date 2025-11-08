@@ -108,11 +108,23 @@ Departamento: [SALES▼]
 - Todos los crates creados
 - CI básico configurado
 
-### Milestone 1 🔄 (En progreso)
-- `core::Executor` funcional
-- `SqliteBackend` con rusqlite
-- CLI REPL básico con rustyline
-- Ejecución simple de SELECT
+### Milestone 1 🔄 (En progreso - 83% completado)
+
+**Estado de Compilación:**
+- ✅ **noctra-core** - Runtime, executor, tipos (0 errores)
+- ✅ **noctra-parser** - Parser RQL/SQL con templates (0 errores)
+- ✅ **noctra-tui** - Terminal UI, layout, widgets (0 errores)
+- ✅ **noctra-formlib** - Parser FDL2 formularios (0 errores)
+- ✅ **noctra-ffi** - Bindings C (0 errores)
+- ⚠️ **noctra-cli** - REPL interactivo (39 errores pendientes)
+- 🚫 **noctra-srv** - Temporalmente deshabilitado (Milestone 4)
+
+**Progreso:**
+- `core::Executor` funcional ✅
+- `SqliteBackend` con rusqlite ✅
+- Parser RQL completo ✅
+- CLI REPL básico con rustyline 🔄 (en corrección)
+- Ejecución simple de SELECT ⏳ (pendiente de CLI)
 
 ### Milestones Siguientes
 - **Milestone 2**: Form loader & TUI renderer

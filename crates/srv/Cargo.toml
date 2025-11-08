@@ -37,9 +37,15 @@ thiserror = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
 
+# CLI
+clap = { workspace = true, features = ["derive"] }
+
 # Security
 jsonwebtoken = { version = "9.0", optional = true }
 bcrypt = { version = "0.15", optional = true }
+
+# Database (for connection pooling)
+rusqlite = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -54,7 +60,8 @@ name = "noctra_srv"
 crate-type = ["cdylib"]
 
 [features]
-default = []
+default = ["sqlite"]
+sqlite = ["rusqlite", "noctra-core/sqlite"]
 auth = ["jsonwebtoken", "bcrypt"]
 
 [package.metadata.docs.rs]

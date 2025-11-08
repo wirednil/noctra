@@ -148,15 +148,12 @@ jobs:
     - name: Analyze binary sizes
       run: |
         du -sh target/release/noctra
-        du -sh target/release/noctrad
-        
+
     - name: Upload binary artifacts
       uses: actions/upload-artifact@v3
       with:
         name: noctra-binaries-${{ github.sha }}
-        path: |
-          target/release/noctra
-          target/release/noctrad
+        path: target/release/noctra
         retention-days: 7
 
   deny:

@@ -8,13 +8,13 @@ use std::collections::HashMap;
 pub struct RqlAst {
     /// Statements parseados
     pub statements: Vec<RqlStatement>,
-    
+
     /// Parámetros extraídos
     pub parameters: Vec<RqlParameter>,
-    
+
     /// Variables de sesión encontradas
     pub session_variables: Vec<String>,
-    
+
     /// Metadatos del parsing
     pub metadata: ParsingMetadata,
 }
@@ -27,29 +27,25 @@ pub enum RqlStatement {
         sql: String,
         parameters: HashMap<String, ParameterType>,
     },
-    
+
     /// Comando USE para cambiar esquema
-    Use {
-        schema: String,
-    },
-    
+    Use { schema: String },
+
     /// Comando LET para variables de sesión
     Let {
         variable: String,
         expression: String,
     },
-    
+
     /// Comando FORM LOAD
-    FormLoad {
-        form_path: String,
-    },
-    
+    FormLoad { form_path: String },
+
     /// Comando EXECFORM
     ExecForm {
         form_path: String,
         parameters: HashMap<String, ParameterType>,
     },
-    
+
     /// Comando OUTPUT TO
     OutputTo {
         destination: OutputDestination,
@@ -62,16 +58,16 @@ pub enum RqlStatement {
 pub struct RqlParameter {
     /// Nombre del parámetro (ej: "dept", "$1", ":name")
     pub name: String,
-    
+
     /// Tipo de parámetro
     pub param_type: ParameterType,
-    
+
     /// Posición en el query original
     pub position: Option<usize>,
-    
+
     /// Línea donde fue encontrado
     pub line: usize,
-    
+
     /// Columna donde fue encontrado
     pub column: usize,
 }
@@ -81,13 +77,13 @@ pub struct RqlParameter {
 pub enum ParameterType {
     /// Parámetro posicionado ($1, $2, etc.)
     Positional,
-    
+
     /// Parámetro nombrado (:name)
     Named,
-    
+
     /// Variable de sesión (#variable)
     SessionVariable,
-    
+
     /// Parámetro en template
     Template,
 }
@@ -97,10 +93,10 @@ pub enum ParameterType {
 pub enum OutputDestination {
     /// Stdout (salida estándar)
     Stdout,
-    
+
     /// Archivo específico
     File(String),
-    
+
     /// Impresora del sistema
     Printer,
 }
@@ -110,13 +106,13 @@ pub enum OutputDestination {
 pub enum OutputFormat {
     /// Formato tabla ASCII
     Table,
-    
+
     /// Formato CSV
     Csv,
-    
+
     /// Formato JSON
     Json,
-    
+
     /// Formato XML
     Xml,
 }
@@ -126,16 +122,16 @@ pub enum OutputFormat {
 pub struct ParsingMetadata {
     /// Timestamp del parsing
     pub timestamp: chrono::DateTime<chrono::Utc>,
-    
+
     /// Versión del parser
     pub parser_version: String,
-    
+
     /// Tiempo de parsing en microsegundos
     pub parsing_time_us: u64,
-    
+
     /// Número de líneas procesadas
     pub lines_processed: usize,
-    
+
     /// Warnings generados durante el parsing
     pub warnings: Vec<String>,
 }
@@ -162,54 +158,56 @@ impl RqlAst {
             metadata: ParsingMetadata::default(),
         }
     }
-    
+
     /// Agregar statement
     pub fn add_statement(&mut self, statement: RqlStatement) {
         self.statements.push(statement);
     }
-    
+
     /// Agregar parámetro
     pub fn add_parameter(&mut self, parameter: RqlParameter) {
         self.parameters.push(parameter);
     }
-    
+
     /// Agregar variable de sesión
     pub fn add_session_variable(&mut self, variable: String) {
         if !self.session_variables.contains(&variable) {
             self.session_variables.push(variable);
         }
     }
-    
+
     /// Obtener todos los parámetros únicos
     pub fn get_parameters(&self) -> Vec<&RqlParameter> {
         self.parameters.iter().collect()
     }
-    
+
     /// Obtener parámetros por tipo
     pub fn get_parameters_by_type(&self, param_type: &ParameterType) -> Vec<&RqlParameter> {
-        self.parameters.iter()
+        self.parameters
+            .iter()
             .filter(|p| &p.param_type == param_type)
             .collect()
     }
-    
+
     /// Obtener parámetros nombrados
     pub fn get_named_parameters(&self) -> Vec<&RqlParameter> {
         self.get_parameters_by_type(&ParameterType::Named)
     }
-    
+
     /// Obtener parámetros posicionados
     pub fn get_positional_parameters(&self) -> Vec<&RqlParameter> {
         self.get_parameters_by_type(&ParameterType::Positional)
     }
-    
+
     /// Verificar si contiene parámetros
     pub fn has_parameters(&self) -> bool {
         !self.parameters.is_empty()
     }
-    
+
     /// Obtener SQL statements únicamente
     pub fn get_sql_statements(&self) -> Vec<&str> {
-        self.statements.iter()
+        self.statements
+            .iter()
             .filter_map(|stmt| {
                 if let RqlStatement::Sql { sql, .. } = stmt {
                     Some(sql.as_str())
@@ -219,14 +217,18 @@ impl RqlAst {
             })
             .collect()
     }
-    
+
     /// Convertir AST a SQL string
     pub fn to_sql(&self) -> String {
-        self.statements.iter()
+        self.statements
+            .iter()
             .map(|stmt| match stmt {
                 RqlStatement::Sql { sql, .. } => sql.clone(),
                 RqlStatement::Use { schema } => format!("USE {};", schema),
-                RqlStatement::Let { variable, expression } => {
+                RqlStatement::Let {
+                    variable,
+                    expression,
+                } => {
                     format!("LET {} = {};", variable, expression)
                 }
                 RqlStatement::FormLoad { form_path } => {
@@ -235,7 +237,10 @@ impl RqlAst {
                 RqlStatement::ExecForm { form_path, .. } => {
                     format!("EXECFORM '{}';", form_path)
                 }
-                RqlStatement::OutputTo { destination, format } => {
+                RqlStatement::OutputTo {
+                    destination,
+                    format,
+                } => {
                     let dest_str = match destination {
                         OutputDestination::Stdout => "STDOUT",
                         OutputDestination::File(path) => path,
@@ -253,15 +258,21 @@ impl RqlAst {
             .collect::<Vec<_>>()
             .join("\n")
     }
-    
+
     /// Obtener información de debug
     pub fn debug_info(&self) -> AstDebugInfo {
         AstDebugInfo {
             statement_count: self.statements.len(),
             parameter_count: self.parameters.len(),
             session_var_count: self.session_variables.len(),
-            has_sql_statements: self.statements.iter().any(|s| matches!(s, RqlStatement::Sql { .. })),
-            has_commands: self.statements.iter().any(|s| !matches!(s, RqlStatement::Sql { .. })),
+            has_sql_statements: self
+                .statements
+                .iter()
+                .any(|s| matches!(s, RqlStatement::Sql { .. })),
+            has_commands: self
+                .statements
+                .iter()
+                .any(|s| !matches!(s, RqlStatement::Sql { .. })),
         }
     }
 }
@@ -295,17 +306,17 @@ impl RqlStatement {
             RqlStatement::OutputTo { .. } => "OUTPUT_TO",
         }
     }
-    
+
     /// Verificar si es un statement SQL
     pub fn is_sql(&self) -> bool {
         matches!(self, RqlStatement::Sql { .. })
     }
-    
+
     /// Verificar si es un comando RQL
     pub fn is_command(&self) -> bool {
         !self.is_sql()
     }
-    
+
     /// Extraer SQL si es statement SQL
     pub fn as_sql(&self) -> Option<&str> {
         if let RqlStatement::Sql { sql, .. } = self {

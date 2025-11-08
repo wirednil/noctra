@@ -3,16 +3,16 @@
 //! CLI interactivo y batch para Noctra con REPL, batch processing,
 //! form execution y daemon mode.
 
+pub mod app;
 pub mod cli;
-pub mod repl;
 pub mod commands;
 pub mod config;
 pub mod output;
-pub mod app;
+pub mod repl;
 
-pub use cli::{NoctraApp, build_cli};
-pub use repl::{Repl, ReplConfig, ReplHandler};
-pub use commands::{execute_command, CommandResult, CommandContext};
+pub use app::{build_cli as build_app, NoctraApp as App};
+pub use cli::{build_cli, NoctraApp, NoctraArgs, ReplArgs};
+pub use commands::{execute_command, CommandContext, CommandResult};
 pub use config::{CliConfig, GlobalConfig};
-pub use output::{OutputFormatter, TableFormatter, CsvFormatter, JsonFormatter};
-pub use app::{NoctraApp as App, NoctraArgs, build_cli as build_app};
+pub use output::{format_result_set, CsvFormatter, JsonFormatter, OutputFormatter, TableFormatter};
+pub use repl::{Repl, ReplHandler};
