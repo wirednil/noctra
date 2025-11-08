@@ -99,6 +99,10 @@ pub struct TuiArgs {
     /// Esquema/base de datos inicial
     #[arg(short, long, value_name = "SCHEMA")]
     pub schema: Option<String>,
+
+    /// Archivo de base de datos SQLite
+    #[arg(short, long, value_name = "DATABASE")]
+    pub database: Option<PathBuf>,
 }
 
 /// Argumentos de batch processing
@@ -382,17 +386,32 @@ impl NoctraApp {
     }
 
     /// Ejecutar TUI completo
-    async fn run_tui(self, _args: TuiArgs) -> Result<(), Box<dyn std::error::Error>> {
+    async fn run_tui(self, args: TuiArgs) -> Result<(), Box<dyn std::error::Error>> {
         use noctra_tui::NoctraTui;
 
         println!("🖥️  Noctra TUI v0.1.0 - Modo Terminal Interactivo");
-        println!("Iniciando interfaz...\n");
 
-        // Pequeña pausa para que el usuario vea el mensaje
+        // Mostrar información de la base de datos
+        if let Some(ref db_path) = args.database {
+            println!("📂 Base de datos: {}", db_path.display());
+        } else {
+            println!("💾 Base de datos: en memoria (temporal)");
+        }
+
+        if let Some(ref schema) = args.schema {
+            println!("📊 Schema: {}", schema);
+        }
+
+        println!();
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-        // Crear y ejecutar el TUI
-        let mut tui = NoctraTui::new()?;
+        // Crear TUI con base de datos si se especificó
+        let mut tui = if let Some(db_path) = args.database {
+            NoctraTui::with_database(db_path.to_string_lossy().to_string())?
+        } else {
+            NoctraTui::new()?
+        };
+
         tui.run()?;
 
         println!("\n👋 ¡Noctra finalizado correctamente!");

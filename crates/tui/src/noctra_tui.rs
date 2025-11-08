@@ -17,8 +17,12 @@ use ratatui::{
     Frame, Terminal,
 };
 use std::io::{stdout, Stdout};
+use std::sync::Arc;
 use std::time::Duration;
 use tui_textarea::{Input, TextArea};
+
+// Backend integration
+use noctra_core::{Executor, Session, ResultSet};
 
 use crate::nwm::UiMode;
 
@@ -26,6 +30,12 @@ use crate::nwm::UiMode;
 pub struct NoctraTui<'a> {
     /// Terminal de Ratatui
     terminal: Terminal<CrosstermBackend<Stdout>>,
+
+    /// Backend executor para ejecutar SQL
+    executor: Arc<Executor>,
+
+    /// Sesión de usuario con variables y estado
+    session: Session,
 
     /// Modo actual de la interfaz
     mode: UiMode,
@@ -72,8 +82,20 @@ pub struct QueryResults {
 }
 
 impl<'a> NoctraTui<'a> {
-    /// Crear nueva instancia del TUI
+    /// Crear nueva instancia del TUI con base de datos en memoria
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let executor = Executor::new_sqlite_memory()?;
+        Self::with_executor(Arc::new(executor))
+    }
+
+    /// Crear TUI con base de datos desde archivo
+    pub fn with_database<P: AsRef<str>>(db_path: P) -> Result<Self, Box<dyn std::error::Error>> {
+        let executor = Executor::new_sqlite_file(db_path.as_ref())?;
+        Self::with_executor(Arc::new(executor))
+    }
+
+    /// Crear TUI con executor personalizado
+    fn with_executor(executor: Arc<Executor>) -> Result<Self, Box<dyn std::error::Error>> {
         // Configurar terminal
         enable_raw_mode()?;
         let mut stdout = stdout();
@@ -92,8 +114,13 @@ impl<'a> NoctraTui<'a> {
         command_editor.set_cursor_line_style(Style::default());
         command_editor.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
 
+        // Crear sesión
+        let session = Session::new();
+
         Ok(Self {
             terminal,
+            executor,
+            session,
             mode: UiMode::Command,
             command_editor,
             command_history: Vec::new(),
@@ -511,6 +538,61 @@ impl<'a> NoctraTui<'a> {
         Ok(())
     }
 
+    /// Convertir ResultSet de noctra-core a QueryResults del TUI
+    fn convert_result_set(&self, result_set: ResultSet, command: &str) -> QueryResults {
+        // Extraer nombres de columnas
+        let columns: Vec<String> = result_set
+            .columns
+            .iter()
+            .map(|col| col.name.clone())
+            .collect();
+
+        // Convertir valores a strings usando Display trait
+        let rows: Vec<Vec<String>> = result_set
+            .rows
+            .iter()
+            .map(|row| {
+                row.values
+                    .iter()
+                    .map(|value| value.to_string())
+                    .collect()
+            })
+            .collect();
+
+        // Construir mensaje de estado
+        let status = if let Some(affected) = result_set.rows_affected {
+            // Para INSERT/UPDATE/DELETE
+            if let Some(rowid) = result_set.last_insert_rowid {
+                format!(
+                    "{} fila(s) afectada(s) - Último ID insertado: {} - Comando: {}",
+                    affected,
+                    rowid,
+                    command.trim()
+                )
+            } else {
+                format!(
+                    "{} fila(s) afectada(s) - Comando: {}",
+                    affected,
+                    command.trim()
+                )
+            }
+        } else {
+            // Para SELECT
+            let row_count = result_set.row_count();
+            if row_count == 0 {
+                format!("Sin resultados - Comando: {}", command.trim())
+            } else {
+                format!("{} fila(s) retornada(s) - Comando: {}", row_count, command.trim())
+            }
+        };
+
+        QueryResults {
+            columns,
+            rows,
+            status,
+        }
+    }
+
     /// Ejecutar comando SQL actual
     fn execute_command(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let command_text = self.command_editor.lines().join("\n");
@@ -523,26 +605,41 @@ impl<'a> NoctraTui<'a> {
         self.command_history.push(command_text.clone());
         self.command_number += 1;
 
-        // TODO: Integrar con el backend real de queries
-        // Por ahora, simular resultados
-        self.current_results = Some(QueryResults {
-            columns: vec!["id".to_string(), "nombre".to_string(), "email".to_string()],
-            rows: vec![
-                vec!["1".to_string(), "Juan Pérez".to_string(), "juan@example.com".to_string()],
-                vec!["2".to_string(), "María García".to_string(), "maria@example.com".to_string()],
-                vec!["3".to_string(), "Pedro López".to_string(), "pedro@example.com".to_string()],
-            ],
-            status: format!("3 filas retornadas - Comando: {}", command_text.trim()),
-        });
+        // ✨ EJECUTAR SQL REAL
+        match self.executor.execute_sql(&self.session, &command_text) {
+            Ok(result_set) => {
+                // Convertir ResultSet a QueryResults
+                self.current_results = Some(self.convert_result_set(result_set, &command_text));
 
-        // Cambiar a modo Result
-        self.mode = UiMode::Result;
+                // Cambiar a modo Result
+                self.mode = UiMode::Result;
+            }
+            Err(e) => {
+                // Mostrar error en Dialog Mode
+                self.show_error_dialog(&format!("❌ Error SQL: {}", e));
+            }
+        }
 
         // Limpiar editor para próximo comando
-        self.command_editor = TextArea::default();
-        self.command_editor.set_block(Block::default().borders(Borders::NONE));
+        self.clear_command_editor();
 
         Ok(())
+    }
+
+    /// Limpiar el editor de comandos
+    fn clear_command_editor(&mut self) {
+        self.command_editor = TextArea::default();
+        self.command_editor.set_block(Block::default().borders(Borders::NONE));
+        self.command_editor.set_cursor_line_style(Style::default());
+        self.command_editor.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
+    }
+
+    /// Mostrar diálogo de error
+    fn show_error_dialog(&mut self, message: &str) {
+        self.dialog_message = Some(message.to_string());
+        self.dialog_options = vec!["OK".to_string()];
+        self.dialog_selected = 0;
+        self.mode = UiMode::Dialog;
     }
 
     /// Mostrar diálogo de confirmación de salida
