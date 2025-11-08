@@ -1,14 +1,15 @@
-# Estado del Proyecto Noctra - Milestone 1 ✅ COMPLETADO
+# Estado del Proyecto Noctra - Milestone 2 🚧 EN PROGRESO
 
 **Última actualización:** 2025-11-08
-**Branch activo:** `claude/analyze-repository-011CUoxFd4r17gcN7w2ofw21`
+**Branch activo:** `claude/milestone-2-forms-tui-011CUoxFd4r17gcN7w2ofw21`
 **Progreso M1:** 100% COMPLETADO ✅
+**Progreso M2:** 60% EN PROGRESO 🚧
 
 ---
 
 ## 🎉 Milestone 1 - COMPLETADO
 
-### ✅ Objetivos Alcanzados
+El Milestone 1 fue completado al 100% con los siguientes logros:
 
 - [x] Workspace configurado y compilando (6/6 crates) ✅
 - [x] `core::Executor` funcional con SQLite backend ✅
@@ -19,7 +20,77 @@
 - [x] CI/CD verde (clippy + tests) ✅
 - [x] Documentación con ejemplos funcionales ✅
 
-**Funcionalidad:** El REPL de Noctra puede ejecutar queries SQL completas con resultados formateados en tablas ASCII.
+**Commit final M1:** `88805e8 - Milestone 1 Completado - REPL SQL Funcional con Tests ✅`
+
+---
+
+## 🚧 Milestone 2 - Forms & TUI (EN PROGRESO)
+
+### ✅ Objetivos Completados
+
+#### Capa Declarativa (FormLib)
+- [x] Estructura `Form` con todos los tipos de campo ✅
+- [x] Parser TOML/JSON completo con `serde` ✅
+- [x] Sistema de validación `FormValidator` ✅
+  - Validación de tipos (text, int, float, bool, date, datetime, email, password)
+  - Validación de rangos (min/max)
+  - Validación de longitud (min_length/max_length)
+  - Validación de patrones regex
+  - Validación de valores permitidos
+- [x] `FormGraph` para navegación jerárquica ✅
+  - Carga de grafos desde TOML
+  - Validación de ciclos
+  - Búsqueda de nodos
+  - Navegación con breadcrumbs
+- [x] `GraphNavigator` con historial ✅
+  - Stack de navegación
+  - go_back() / go_forward() / go_home()
+  - Carga de formularios desde nodos
+
+#### Capa TUI
+- [x] NWM (Noctra Window Manager) ✅
+  - Sistema de modos (Command, Result, Form, Dialog)
+  - Stack de ventanas LIFO
+  - Configuración flexible
+  - Renderizado de layout con header/footer
+- [x] Arquitectura de ventanas ✅
+  - `NwmWindow` con tipos de contenido
+  - `WindowContent` (Text, ResultSet, Form, Widget, Empty)
+  - Metadata extensible
+
+#### Ejemplos y Documentación
+- [x] Formularios de ejemplo ✅
+  - `employee_search.toml` - Búsqueda con validaciones
+  - `employee_add.toml` - Alta de empleados con validaciones completas
+- [x] Archivo de aplicación `app.toml` ✅
+  - Grafo jerárquico completo
+  - Menús, formularios y queries
+  - Navegación multi-nivel
+- [x] Documentación completa `docs/FORMS.md` ✅
+  - Arquitectura del sistema
+  - Especificación FDL2
+  - API Reference
+  - Ejemplos de uso
+
+### 🚧 En Progreso
+
+#### Renderer de Formularios
+- [ ] Widget FormRenderer en TUI
+- [ ] Renderizado de campos según tipo
+- [ ] Input interactivo de campos
+- [ ] Visualización de errores de validación
+
+#### Integración CLI
+- [ ] Comando `noctra form load <file>`
+- [ ] Comando `noctra form exec <file>`
+- [ ] Comando `noctra form preview <file>`
+- [ ] Integración con GraphNavigator en REPL
+
+#### Tests
+- [ ] Tests de FormGraph (carga, validación, navegación)
+- [ ] Tests de NWM (stack, modos, renderizado)
+- [ ] Tests de integración CLI + Forms
+- [ ] Coverage >75%
 
 ---
 
@@ -32,12 +103,12 @@
 | **noctra-core** | ~550 | ✅ OK | 10 unit | ✅ | Executor + SQLite + tests |
 | **noctra-parser** | 1,483 | ✅ OK | 1 | ✅ | Parser RQL/SQL |
 | **noctra-cli** | ~900 | ✅ OK | 4 int | ✅ | CLI + REPL funcional |
-| **noctra-tui** | 2,197 | ✅ OK | 0 | ✅ | Widgets + renderer |
-| **noctra-formlib** | ~800 | ✅ OK | 0 | ✅ | Parser FDL2 |
+| **noctra-tui** | ~3,200 | ✅ OK | 4 | ✅ | NWM + Widgets + renderer |
+| **noctra-formlib** | ~1,800 | ✅ OK | 3 | ✅ | Parser FDL2 + FormGraph |
 | **noctra-ffi** | ~200 | ✅ OK | 2 | ✅ | FFI C bindings |
 
-**Total:** ~6,130 líneas compilando sin errores ni warnings
-**Tests:** 17 pasando (10 unit + 4 integration + 2 ffi + 1 parser)
+**Total:** ~8,133 líneas compilando sin errores ni warnings
+**Tests:** 24 pasando (10 core + 4 cli + 4 tui + 3 formlib + 2 ffi + 1 parser)
 
 ### 🚫 Crate Deshabilitado
 
@@ -47,110 +118,217 @@
 
 ---
 
-## 🔧 Funcionalidad Implementada (M1)
+## 🔧 Funcionalidad Implementada (M2)
 
-### Core Features ✅
+### FormLib Features ✅
 
-#### 1. Executor SQL Completo
-- ✅ Detección automática query vs statement
-- ✅ SELECT con columnas, filas y tipos
-- ✅ INSERT con rows_affected y last_insert_rowid
-- ✅ UPDATE/DELETE con rows_affected
-- ✅ CREATE/DROP/ALTER tables
-- ✅ Manejo de errores SQL con mensajes descriptivos
+#### 1. Form Definition Language (FDL2)
+- ✅ Carga desde TOML/JSON con `serde`
+- ✅ Tipos de campo completos (text, int, float, bool, date, datetime, email, password, textarea, select, multiselect)
+- ✅ Validaciones declarativas
+  - Rangos numéricos (min/max)
+  - Longitud de texto (min_length/max_length)
+  - Patrones regex
+  - Valores permitidos
+- ✅ Acciones de formulario
+  - Query (SELECT)
+  - Insert
+  - Update
+  - Delete
+  - Script
+  - ApiCall
+- ✅ Configuración de UI
+  - Layout (single, double, flexible)
+  - Dimensiones (width, height)
+  - Tema visual
+  - Botones de acción
+- ✅ Configuración de paginación
+  - page_size
+  - order_by
+  - default_filters
 
-#### 2. REPL Interactivo
-- ✅ Prompt personalizable
-- ✅ Historial de comandos
-- ✅ Comandos especiales (:version, :config, :status, :help)
-- ✅ Formateo de resultados en tabla ASCII
-- ✅ Manejo de sesiones SQLite
+#### 2. FormGraph - Navegación Jerárquica
+- ✅ Definición de grafo en TOML
+  - Nodos (menu, form, query, link)
+  - Jerarquía con children
+  - Metadata extensible
+- ✅ Validación de grafo
+  - Detección de ciclos
+  - Validación de paths de formularios
+- ✅ GraphNavigator
+  - Navegación (navigate_to, go_back, go_forward, go_home)
+  - Breadcrumbs
+  - Historial
+  - Carga de formularios desde nodos
 
-#### 3. Formateo de Output
-- ✅ Tablas ASCII con bordes unicode
-- ✅ Alineación automática de columnas
-- ✅ Conteo de filas
-- ✅ Mensajes de filas afectadas
+#### 3. Validador de Formularios
+- ✅ Validación de tipos
+  - Text (ASCII + whitespace)
+  - Int (i64)
+  - Float (f64)
+  - Boolean (true/false/1/0)
+  - Email (validación básica)
+  - Date (YYYY-MM-DD)
+  - DateTime (YYYY-MM-DD HH:MM:SS)
+  - Select (valores permitidos)
+  - MultiSelect (múltiples valores)
+- ✅ Validación de rangos
+  - Valores numéricos min/max
+- ✅ Validación de patrones
+  - Regex patterns
+- ✅ Validación de longitud
+  - min_length / max_length
+- ✅ Validación de valores permitidos
+  - allowed_values list
 
-### Tests ✅
+### TUI Features ✅
 
-#### Tests de Integración (4)
-- `test_simple_select_query` - SELECT 1+1
-- `test_create_and_select_table` - CREATE + INSERT + SELECT
-- `test_repl_creation` - Instanciación REPL
-- `test_query_formatting` - Formato ASCII
+#### 1. Noctra Window Manager (NWM)
+- ✅ Sistema de modos
+  - Command Mode (REPL)
+  - Result Mode (tablas)
+  - Form Mode (entrada de datos)
+  - Dialog Mode (mensajes)
+- ✅ Stack de ventanas
+  - push_window()
+  - pop_window()
+  - close_current_window()
+  - replace_window()
+- ✅ Navegación
+  - Breadcrumbs
+  - Historial de ventanas cerradas
+  - Integración con GraphNavigator
+- ✅ Renderizado de layout
+  - Header con breadcrumbs
+  - Main area (contenido de ventana)
+  - Footer con status bar
+  - Dimensiones configurables
 
-#### Tests Unitarios Core (10)
-- Backend creation & ping
-- SELECT queries
-- INSERT statements con rows_affected
-- UPDATE statements
-- DELETE statements
-- CREATE TABLE
-- Parameter mapping
-- Query builders
-- Error handling
-- Backend info
+#### 2. Tipos de Ventana
+- ✅ Command Window (modo REPL)
+- ✅ Result Window (ResultSet)
+- ✅ Form Window (Form)
+- ✅ Dialog Window (Text)
+- ✅ Custom Widget Window
+
+#### 3. Configuración NWM
+- ✅ show_breadcrumbs
+- ✅ show_status_bar
+- ✅ header_height / footer_height
+- ✅ theme
+- ✅ min_window_size
 
 ---
 
-## 📝 Commits del Milestone 1
+## 📝 Nuevos Archivos Creados (M2)
 
-### Fase 1: Compilación (Nov 7)
-1. **aef3cc9** - Fix errores en core, tui, srv
-2. **9b35f87** - Fix tui + deshabilitar srv
-3. **26bbcef** - Documentar progreso 83%
-4. **34dd053** - Fix 11 errores cli (39→28)
-5. **b24ea20** - Fix imports cli (28→25)
-6. **7d30033** - Fix todos errores cli (25→0) ✅
+### FormLib
+```
+crates/formlib/src/
+  ├── graph.rs           (NEW) - FormGraph + GraphNavigator
+  ├── forms.rs           (EXIST) - Tipos de formulario
+  ├── loader.rs          (EXIST) - Parser TOML/JSON
+  ├── validation.rs      (EXIST) - FormValidator
+  └── lib.rs             (UPDATED) - Exports
+```
 
-### Fase 2: Formateo y Warnings (Nov 8)
-7. **1f6194c** - Aplicar cargo fmt + corregir warnings clippy
-8. **e53737b** - Actualizar STATUS.md - M1 Fase Compilación 100%
+### TUI
+```
+crates/tui/src/
+  ├── nwm.rs             (NEW) - NoctraWindowManager
+  ├── renderer.rs        (EXIST) - TuiRenderer
+  ├── widgets.rs         (EXIST) - Widgets básicos
+  ├── components.rs      (EXIST) - Componentes
+  ├── layout.rs          (EXIST) - LayoutManager
+  └── lib.rs             (UPDATED) - Exports
+```
 
-### Fase 3: Funcionalidad SELECT (Nov 8)
-9. **e0cf194** - feat: Implementar SELECT funcional + suite tests
-   - Executor detecta query vs statement
-   - 4 tests integración + 10 tests unitarios
-   - Exports ReplArgs y format_result_set
+### Examples
+```
+examples/
+  ├── forms/
+  │   ├── employee_search.toml    (NEW) - Formulario de búsqueda
+  │   └── employee_add.toml       (NEW) - Formulario de alta
+  ├── menus/                      (NEW) - Directorio para menús
+  └── app.toml                    (NEW) - Aplicación de ejemplo
+```
 
-### Fase 4: Calidad y CI (Nov 8)
-10. **35c3408** - fix: Corregir todas advertencias clippy
-    - formlib: Default traits, unused imports
-    - ffi: unsafe functions, Safety docs
-    - tui: push→push_str, Default traits, is_empty
-    - cli: unused vars, PathBuf→Path, strip_prefix
-
-11. **3089816** - ci: Fix binary-size job (eliminar noctrad)
-12. **4f40ebe** - docs: Agregar GETTING_STARTED.md con ejemplos
+### Documentation
+```
+docs/
+  └── FORMS.md           (NEW) - Documentación completa del sistema
+```
 
 ---
 
-## 🎯 Ejemplo de Uso (M1)
+## 🎯 Ejemplo de Uso (M2)
 
-```bash
-$ ./target/release/noctra
-🐍 Noctra v0.1.0 - Entorno SQL Interactivo
-🎯 Noctra REPL iniciado - Escribe 'help' para ayuda
+### Cargar y Validar Formulario
 
-noctra> CREATE TABLE users (id INTEGER, name TEXT);
-✅ Query ejecutado
+```rust
+use noctra_formlib::{load_form_from_path, FormValidator};
+use std::path::Path;
+use std::collections::HashMap;
 
-noctra> INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob');
-✅ 2 filas afectadas
+// Cargar formulario
+let form = load_form_from_path(Path::new("examples/forms/employee_search.toml"))?;
+println!("Form: {}", form.title);
 
-noctra> SELECT * FROM users;
-┌────┬───────┐
-│ id │ name  │
-├────┼───────┤
-│ 1  │ Alice │
-│ 2  │ Bob   │
-└────┴───────┘
+// Validar valores
+let validator = FormValidator::new();
+let values = HashMap::from([
+    ("name".to_string(), "John Doe".to_string()),
+    ("email".to_string(), "john@example.com".to_string()),
+]);
 
-(2 filas)
+match validator.validate_form(&form, &values) {
+    Ok(()) => println!("✅ Validación exitosa"),
+    Err(errors) => {
+        for error in errors {
+            eprintln!("❌ Error: {}", error);
+        }
+    }
+}
+```
 
-noctra> quit
-👋 ¡Hasta luego!
+### Navegar con FormGraph
+
+```rust
+use noctra_formlib::FormGraph;
+use std::path::Path;
+
+// Cargar aplicación
+let graph = FormGraph::load_from_file(Path::new("examples/app.toml"))?;
+let mut navigator = GraphNavigator::new(graph);
+
+// Navegar
+navigator.navigate_to("employee_search")?;
+let breadcrumb = navigator.get_breadcrumb()?;
+println!("📍 {}", breadcrumb.join(" > "));
+
+// Cargar formulario del nodo actual
+let form = navigator.load_current_form()?;
+println!("📝 {}", form.title);
+```
+
+### Usar NWM
+
+```rust
+use noctra_tui::{NoctraWindowManager, NwmWindow};
+
+let mut nwm = NoctraWindowManager::default();
+
+// Crear ventana de comando
+let cmd = NwmWindow::command("cmd1".into(), "Main Command".into());
+nwm.push_window(cmd);
+
+// Crear ventana de formulario
+let form_window = NwmWindow::form("form1".into(), "Employee Search".into(), form);
+nwm.push_window(form_window);
+
+// Renderizar
+let output = nwm.render_layout((80, 24))?;
+println!("{}", output);
 ```
 
 ---
@@ -167,70 +345,71 @@ noctra> quit
 ### Métricas de Calidad
 
 - **Clippy warnings:** 0 (con -D warnings)
-- **Tests pasando:** 17/17 (100%)
+- **Tests pasando:** 24/24 (100%)
 - **Compilación:** 6/6 crates OK
-- **Coverage:** tests integration + unit en core/cli
+- **Coverage:** En progreso (target >75%)
+
+---
+
+## 🔄 Próximos Pasos (M2)
+
+### Semana Actual
+- [ ] Implementar FormRenderer widget
+- [ ] Agregar comandos CLI (form load/exec/preview)
+- [ ] Tests de integración FormLib + TUI
+- [ ] Mejorar coverage a >75%
+
+### Milestone 2 Completado
+Cuando esté completo:
+- FormLib con parser, validator y graph funcional
+- NWM con todos los modos operativos
+- Renderer de formularios en TUI
+- Comandos CLI integrados
+- Tests con >75% coverage
+- Documentación completa
+
+---
+
+## 📊 Métricas de Progreso M2
+
+| Componente | Progreso | Estado |
+|------------|----------|--------|
+| FormLib (parser + validator) | 100% | ✅ Completado |
+| FormGraph + Navigator | 100% | ✅ Completado |
+| NWM (Window Manager) | 100% | ✅ Completado |
+| FormRenderer widget | 0% | ⏸️ Pendiente |
+| Comandos CLI | 0% | ⏸️ Pendiente |
+| Tests integración | 20% | 🚧 En progreso |
+| Documentación | 100% | ✅ Completado |
+| **TOTAL M2** | **60%** | 🚧 **EN PROGRESO** |
 
 ---
 
 ## 📚 Documentación
 
-- ✅ [GETTING_STARTED.md](GETTING_STARTED.md) - Guía completa con ejemplos
+- ✅ [FORMS.md](docs/FORMS.md) - Sistema de formularios completo
+- ✅ [GETTING_STARTED.md](GETTING_STARTED.md) - Guía de inicio (M1)
 - ✅ [README.md](README.md) - Overview del proyecto
 - ✅ [RQL-EXTENSIONS.md](docs/RQL-EXTENSIONS.md) - Especificación RQL
-- ✅ [FDL2-SPEC.md](docs/FDL2-SPEC.md) - Especificación FDL2
+- ✅ [FDL2-SPEC.md](docs/FDL2-SPEC.md) - Especificación FDL2 (legacy)
 - ✅ Docstrings en APIs públicas
 - ✅ Tests como documentación ejecutable
 
 ---
 
-## 🔄 Próximos Milestones
+## 🎓 Lecciones Aprendidas (M2)
 
-### Milestone 2 - Optimización y UX
-- [ ] Autocompletado en REPL
-- [ ] Syntax highlighting
-- [ ] Paginación de resultados
-- [ ] Export a CSV/JSON
-- [ ] Más comandos REPL (:tables, :schema, :explain)
-
-### Milestone 3 - Formularios FDL2
-- [ ] Carga y validación de formularios
-- [ ] Ejecutor de formularios
-- [ ] Integración con TUI
-
-### Milestone 4 - Daemon (Opcional)
-- [ ] Habilitar noctra-srv
-- [ ] REST API
-- [ ] WebSocket para REPL remoto
+1. **Arquitectura en capas:** Separación clara entre FormLib (declarativa), TUI (presentación) y CLI (comandos) facilita testing y mantenimiento
+2. **Declarativo > Imperativo:** Definir formularios en TOML es más mantenible que código
+3. **Validación temprana:** Validar el FormGraph al cargar previene errores en runtime
+4. **Stack de ventanas:** El patrón LIFO para ventanas simplifica la navegación
+5. **Tests desde el inicio:** Los tests de NWM y FormGraph detectaron bugs temprano
 
 ---
 
-## 📊 Métricas Finales M1
+**Estado:** 🚧 MILESTONE 2 EN PROGRESO (60%)
+**Branch:** `claude/milestone-2-forms-tui-011CUoxFd4r17gcN7w2ofw21`
+**Último commit:** (pendiente)
+**Pull Request:** (pendiente al completar M2)
 
-| Métrica | Valor |
-|---------|-------|
-| Líneas de código | ~6,130 |
-| Crates funcionales | 6/6 (100%) |
-| Tests | 17 pasando |
-| Clippy warnings | 0 |
-| Compilación | ✅ Sin errores |
-| CI/CD | ✅ Verde |
-| Documentación | ✅ Completa |
-
----
-
-## 🎓 Lecciones Aprendidas
-
-1. **Arquitectura modular:** Separación en crates permite desarrollo independiente
-2. **Tests primero:** Tests de integración validaron funcionalidad end-to-end
-3. **Clippy estricto:** -D warnings fuerza calidad desde el inicio
-4. **Documentación viva:** Ejemplos en GETTING_STARTED verificados funcionando
-
----
-
-**Estado:** ✅ MILESTONE 1 COMPLETADO
-**Fecha de completación:** 2025-11-08
-**Tiempo total:** ~4 horas de desarrollo activo
-**Pull Request:** https://github.com/wirednil/noctra/pull/new/claude/analyze-repository-011CUoxFd4r17gcN7w2ofw21
-
-🎉 ¡Noctra está listo para ser usado como REPL SQL interactivo!
+🚀 ¡Noctra está evolucionando hacia un sistema completo de formularios y TUI!

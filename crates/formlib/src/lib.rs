@@ -4,9 +4,11 @@
 //! definidos en FDL2 (TOML format).
 
 pub mod forms;
+pub mod graph;
 pub mod loader;
 pub mod validation;
 
 pub use forms::*;
+pub use graph::{FormGraph, GraphNavigator, NodeDefinition, NodeType};
 pub use loader::{load_form, load_form_from_path};
 pub use validation::ValidationError;
