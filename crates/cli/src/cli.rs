@@ -116,6 +116,46 @@ pub struct BatchArgs {
 /// Argumentos de formulario
 #[derive(Args, Debug, Clone)]
 pub struct FormArgs {
+    /// Subcomando de formulario
+    #[command(subcommand)]
+    pub command: FormSubcommand,
+}
+
+/// Subcomandos de Form
+#[derive(Subcommand, Debug, Clone)]
+pub enum FormSubcommand {
+    /// Cargar y validar formulario
+    #[command(name = "load")]
+    Load(FormLoadArgs),
+
+    /// Ejecutar formulario interactivamente
+    #[command(name = "exec")]
+    Exec(FormExecArgs),
+
+    /// Preview de formulario (sin ejecutar)
+    #[command(name = "preview")]
+    Preview(FormPreviewArgs),
+}
+
+/// Argumentos de form load
+#[derive(Args, Debug, Clone)]
+pub struct FormLoadArgs {
+    /// Archivo de formulario TOML
+    #[arg(required = true, value_name = "FILE")]
+    pub file: PathBuf,
+
+    /// Solo validar (no mostrar)
+    #[arg(short, long)]
+    pub validate_only: bool,
+
+    /// Mostrar información detallada
+    #[arg(short, long)]
+    pub info: bool,
+}
+
+/// Argumentos de form exec
+#[derive(Args, Debug, Clone)]
+pub struct FormExecArgs {
     /// Archivo de formulario TOML
     #[arg(required = true, value_name = "FILE")]
     pub file: PathBuf,
@@ -128,9 +168,21 @@ pub struct FormArgs {
     #[arg(short, long, value_name = "FILE")]
     pub output: Option<PathBuf>,
 
-    /// No ejecutar formulario (solo validación)
-    #[arg(long)]
-    pub validate_only: bool,
+    /// Modo no interactivo (usar valores por defecto)
+    #[arg(short, long)]
+    pub non_interactive: bool,
+}
+
+/// Argumentos de form preview
+#[derive(Args, Debug, Clone)]
+pub struct FormPreviewArgs {
+    /// Archivo de formulario TOML
+    #[arg(required = true, value_name = "FILE")]
+    pub file: PathBuf,
+
+    /// Mostrar valores de ejemplo
+    #[arg(short, long)]
+    pub with_examples: bool,
 }
 
 /// Argumentos de query directo
@@ -332,20 +384,167 @@ impl NoctraApp {
 
     /// Ejecutar formulario
     async fn run_form(self, args: FormArgs) -> Result<(), Box<dyn std::error::Error>> {
-        println!("📋 Ejecutando formulario: {}", args.file.display());
+        use FormSubcommand::*;
 
-        // Validar formulario
+        match args.command {
+            Load(load_args) => self.run_form_load(load_args).await,
+            Exec(exec_args) => self.run_form_exec(exec_args).await,
+            Preview(preview_args) => self.run_form_preview(preview_args).await,
+        }
+    }
+
+    /// Cargar y validar formulario
+    async fn run_form_load(
+        &self,
+        args: FormLoadArgs,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use noctra_formlib::load_form_from_path;
+
+        println!("📋 Cargando formulario: {}", args.file.display());
+
+        // Validar que el archivo existe
         if !args.file.exists() {
             return Err(format!("Form file not found: {}", args.file.display()).into());
         }
 
+        // Cargar formulario
+        let form = load_form_from_path(&args.file)?;
+
         if args.validate_only {
-            println!("✅ Formulario válido");
+            println!("✅ Formulario válido: {}", form.title);
             return Ok(());
         }
 
-        // TODO: Implementar ejecución de formulario
-        println!("⚠️  Form execution no implementado aún");
+        // Mostrar información del formulario
+        println!("\n📝 Formulario: {}", form.title);
+        if let Some(desc) = &form.description {
+            println!("   Descripción: {}", desc);
+        }
+        if let Some(schema) = &form.schema {
+            println!("   Schema: {}", schema);
+        }
+
+        println!("\n🔢 Campos ({}):", form.fields.len());
+        for (name, field) in &form.fields {
+            let required = if field.required { "*" } else { "" };
+            println!(
+                "   - {}{}: {} ({:?})",
+                name, required, field.label, field.field_type
+            );
+        }
+
+        println!("\n⚡ Acciones ({}):", form.actions.len());
+        for (name, action) in &form.actions {
+            println!("   - {}: {:?}", name, action.action_type);
+        }
+
+        if args.info {
+            println!("\n📊 Información Detallada:");
+            if let Some(ui_config) = &form.ui_config {
+                println!("   Layout: {:?}", ui_config.layout);
+                if let Some(width) = ui_config.width {
+                    println!("   Width: {}", width);
+                }
+                if let Some(height) = ui_config.height {
+                    println!("   Height: {}", height);
+                }
+            }
+        }
+
+        println!("\n✅ Formulario cargado correctamente");
+        Ok(())
+    }
+
+    /// Ejecutar formulario interactivamente
+    async fn run_form_exec(
+        &self,
+        args: FormExecArgs,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use noctra_formlib::load_form_from_path;
+        use noctra_tui::FormRenderer;
+
+        println!("🚀 Ejecutando formulario: {}", args.file.display());
+
+        // Cargar formulario
+        let form = load_form_from_path(&args.file)?;
+        let mut renderer = FormRenderer::new(form);
+
+        if args.non_interactive {
+            // Usar valores por defecto o de parámetros
+            for param in args.param {
+                renderer.set_field_value(&param.key, param.value)?;
+            }
+
+            // Validar
+            renderer.validate_form()?;
+            println!("✅ Formulario validado correctamente");
+
+            // Mostrar valores
+            println!("\n📊 Valores:");
+            for (key, value) in renderer.get_values() {
+                println!("   {}: {}", key, value);
+            }
+        } else {
+            // Modo interactivo - mostrar render
+            println!("\n{}", renderer.render());
+
+            println!("\n💡 Tip: Usa 'noctra form exec --non-interactive' para modo batch");
+        }
+
+        Ok(())
+    }
+
+    /// Preview de formulario
+    async fn run_form_preview(
+        &self,
+        args: FormPreviewArgs,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use noctra_formlib::load_form_from_path;
+        use noctra_tui::FormRenderer;
+
+        println!("👁️  Preview de formulario: {}", args.file.display());
+
+        // Cargar formulario
+        let form = load_form_from_path(&args.file)?;
+        let mut renderer = FormRenderer::new(form);
+
+        // Agregar valores de ejemplo si se solicita
+        if args.with_examples {
+            // Colectar campos primero para evitar borrow issues
+            let field_examples: Vec<(String, String)> = renderer
+                .form
+                .fields
+                .iter()
+                .map(|(name, field)| {
+                    let example_value = match field.field_type {
+                        noctra_formlib::FieldType::Text => "Example Text".to_string(),
+                        noctra_formlib::FieldType::Int => "42".to_string(),
+                        noctra_formlib::FieldType::Float => "3.14".to_string(),
+                        noctra_formlib::FieldType::Boolean => "true".to_string(),
+                        noctra_formlib::FieldType::Email => "user@example.com".to_string(),
+                        noctra_formlib::FieldType::Date => "2025-11-08".to_string(),
+                        noctra_formlib::FieldType::DateTime => "2025-11-08 14:30:00".to_string(),
+                        noctra_formlib::FieldType::Password => "password123".to_string(),
+                        noctra_formlib::FieldType::Select { ref options } => {
+                            options.first().cloned().unwrap_or_default()
+                        }
+                        _ => String::new(),
+                    };
+                    (name.clone(), example_value)
+                })
+                .collect();
+
+            // Ahora establecer los valores
+            for (name, value) in field_examples {
+                let _ = renderer.set_field_value(&name, value);
+            }
+        }
+
+        // Renderizar
+        println!("\n{}", renderer.render());
+
+        println!("\n✨ Este es un preview del formulario.");
+        println!("   Usa 'noctra form exec {}' para ejecutarlo.", args.file.display());
 
         Ok(())
     }
