@@ -240,7 +240,6 @@ impl NoctraWindowManager {
         }
     }
 
-
     /// Establecer navegador de grafo
     pub fn with_navigator(mut self, navigator: GraphNavigator) -> Self {
         self.navigator = Some(navigator);

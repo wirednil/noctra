@@ -76,10 +76,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@master
-      
+      with:
+        toolchain: stable
+
     - name: Install system dependencies
       run: sudo apt-get install -y libncurses5-dev libncursesw5-dev
       
@@ -98,10 +100,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@master
-    
+      with:
+        toolchain: stable
+
     - name: Install tarpaulin
       run: |
         cargo install cargo-tarpaulin
@@ -123,10 +127,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@master
-      
+      with:
+        toolchain: stable
+
     - name: Audit dependencies
       run: cargo audit --db $(pwd)/advisory-db
       
@@ -138,10 +144,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@master
-      
+      with:
+        toolchain: stable
+
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libncurses5-dev libncursesw5-dev
+
     - name: Build release binaries
       run: cargo build --workspace --release
       
@@ -161,9 +172,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+
     - name: Install cargo-deny
       run: cargo install --locked cargo-deny
-      
+
     - name: Run cargo deny check
       run: cargo deny check

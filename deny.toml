@@ -1,0 +1,60 @@
+# Configuración de cargo-deny para Noctra
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Nodos para excluir del gráfico de dependencias
+targets = []
+all-features = true
+
+[advisories]
+# Base de datos de advisories de seguridad
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+vulnerability = "deny"
+unmaintained = "warn"
+yanked = "warn"
+notice = "warn"
+ignore = []
+
+[licenses]
+# Licencias permitidas en el proyecto
+unlicensed = "deny"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "BSD-2-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unlicense",
+    "0BSD",
+]
+deny = []
+copyleft = "warn"
+allow-osi-fsf-free = "both"
+default = "deny"
+confidence-threshold = 0.8
+
+[licenses.private]
+# No ignorar archivos privados
+ignore = false
+registries = []
+
+[bans]
+# Rechazar crates múltiples
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow = []
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+# Fuentes permitidas de crates
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
