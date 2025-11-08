@@ -461,15 +461,17 @@ impl NoctraApp {
         args: FormExecArgs,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use noctra_formlib::load_form_from_path;
-        use noctra_tui::FormRenderer;
 
         println!("🚀 Ejecutando formulario: {}", args.file.display());
 
         // Cargar formulario
         let form = load_form_from_path(&args.file)?;
-        let mut renderer = FormRenderer::new(form);
 
         if args.non_interactive {
+            // Modo no interactivo (batch)
+            use noctra_tui::FormRenderer;
+            let mut renderer = FormRenderer::new(form);
+
             // Usar valores por defecto o de parámetros
             for param in args.param {
                 renderer.set_field_value(&param.key, param.value)?;
@@ -485,10 +487,39 @@ impl NoctraApp {
                 println!("   {}: {}", key, value);
             }
         } else {
-            // Modo interactivo - mostrar render
-            println!("\n{}", renderer.render());
+            // Modo interactivo con TUI
+            use crate::interactive_form::InteractiveFormExecutor;
 
-            println!("\n💡 Tip: Usa 'noctra form exec --non-interactive' para modo batch");
+            println!("\n🎯 Modo interactivo");
+            println!("   TAB/Shift+TAB: Navegar entre campos");
+            println!("   Escribir: Editar valor del campo");
+            println!("   Backspace: Borrar carácter");
+            println!("   Enter: Validar y continuar");
+            println!("   ESC: Cancelar\n");
+
+            println!("Presiona cualquier tecla para continuar...");
+            std::thread::sleep(std::time::Duration::from_secs(2));
+
+            let mut executor = InteractiveFormExecutor::new(form);
+            match executor.run()? {
+                Some(values) => {
+                    println!("\n✅ Formulario completado");
+                    println!("\n📊 Valores:");
+                    for (key, value) in &values {
+                        println!("   {}: {}", key, value);
+                    }
+
+                    // Guardar output si se especifica
+                    if let Some(output_file) = args.output {
+                        let json = serde_json::to_string_pretty(&values)?;
+                        std::fs::write(&output_file, json)?;
+                        println!("\n💾 Guardado en: {}", output_file.display());
+                    }
+                }
+                None => {
+                    println!("\n❌ Formulario cancelado");
+                }
+            }
         }
 
         Ok(())

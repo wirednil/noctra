@@ -338,7 +338,7 @@ impl FormRenderer {
     }
 
     /// Renderizar un campo
-    fn render_field(&self, field_name: &str, field: &FormField, state: &FieldState) -> String {
+    fn render_field(&self, _field_name: &str, field: &FormField, state: &FieldState) -> String {
         let mut output = String::new();
 
         // Label del campo
