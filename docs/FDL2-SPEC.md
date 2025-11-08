@@ -1,5 +1,13 @@
 # FDL2 (Form Definition Language) - Especificación Completa
 
+## 📚 Documentación Relacionada
+
+- **[Getting Started](GETTING_STARTED.md)** - Tutorial práctico de uso de formularios
+- **[Design Document](DESIGN.md)** - Sección 5: Arquitectura de FDL2
+- **[RQL Extensions](RQL-EXTENSIONS.md)** - Sintaxis de templates usada en formularios
+- **[API Reference](API-REFERENCE.md)** - API programática de formularios
+- **[Roadmap](ROADMAP.md)** - Milestone 2: Implementación de formularios
+
 ## Introducción
 
 FDL2 es el **Form Definition Language** de Noctra, un lenguaje declarativo moderno para definir formularios que se compilan automáticamente a operaciones SQL. Basado en TOML y template processing para máxima flexibilidad.

@@ -11,6 +11,7 @@ authors = ["Claude Code <claude@anthropic.com>"]
 # TUI framework
 ratatui = { version = "0.24", features = ["macros"] }
 crossterm = { version = "0.27" }
+tui-textarea = "0.4"
 
 # Core dependencies
 noctra-core = { path = "../core" }

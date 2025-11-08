@@ -2,6 +2,16 @@
 
 > **Entorno SQL interactivo y framework TUI para formularios** moderno: SQL real, formulación declarativa de formularios, runtime ligero y ejecución batch.
 
+## 📚 Documentación
+
+- **[Getting Started](docs/GETTING_STARTED.md)** - Guía de inicio rápido y tutorial
+- **[Design Document](docs/DESIGN.md)** - Arquitectura técnica completa
+- **[Roadmap](docs/ROADMAP.md)** - Timeline de desarrollo y milestones
+- **[RQL Extensions](docs/RQL-EXTENSIONS.md)** - Referencia del lenguaje SQL extendido
+- **[FDL2 Specification](docs/FDL2-SPEC.md)** - Especificación de formularios
+- **[API Reference](docs/API-REFERENCE.md)** - API de programación
+- **[Contributing](CONTRIBUTING.md)** - Guía para contribuidores
+
 ## 🎯 Descripción
 
 Noctra es un **entorno de consulta interactivo** moderno implementado en **Rust** que ofrece una experiencia de consulta SQL fluida con filosofía 4GL, agregando las ventajas de la tecnología contemporánea:

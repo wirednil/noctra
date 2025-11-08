@@ -1,5 +1,15 @@
 # Getting Started - Guía de Inicio Rápido
 
+## 📚 Documentación Relacionada
+
+- **[README](../README.md)** - Visión general del proyecto
+- **[Design Document](DESIGN.md)** - Arquitectura técnica detallada
+- **[Roadmap](ROADMAP.md)** - Milestones y timeline de desarrollo
+- **[RQL Extensions](RQL-EXTENSIONS.md)** - Referencia completa del lenguaje
+- **[FDL2 Specification](FDL2-SPEC.md)** - Lenguaje de definición de formularios
+- **[API Reference](API-REFERENCE.md)** - API de programación
+- **[Contributing](../CONTRIBUTING.md)** - Cómo contribuir al proyecto
+
 ## Introducción
 
 Bienvenido a **Noctra**, el entorno SQL interactivo moderno implementado en Rust. Esta guía te ayudará a instalar, configurar y usar Noctra por primera vez.

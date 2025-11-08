@@ -1,0 +1,121 @@
+# Noctra Application Definition
+# Sistema de navegación jerárquica de formularios
+
+version = "1.0"
+title = "Noctra HR Management System"
+base_path = "examples"
+
+[config]
+default_database = "hr_database.db"
+default_theme = "default"
+default_page_size = 20
+show_breadcrumbs = true
+enable_history = true
+
+# Nodo raíz del grafo
+[root]
+id = "main_menu"
+title = "Main Menu"
+type = "menu"
+description = "HR Management System - Main Menu"
+icon = "🏠"
+
+# Gestión de empleados
+[[root.children]]
+id = "employees"
+title = "Employees"
+type = "menu"
+description = "Employee Management"
+icon = "👥"
+
+[[root.children.children]]
+id = "employee_search"
+title = "Search Employees"
+type = "form"
+path = "forms/employee_search.toml"
+description = "Search and filter employees"
+icon = "🔍"
+
+[[root.children.children]]
+id = "employee_add"
+title = "Add Employee"
+type = "form"
+path = "forms/employee_add.toml"
+description = "Register new employee"
+icon = "➕"
+
+[[root.children.children]]
+id = "employee_list"
+title = "List All Employees"
+type = "query"
+action = "SELECT id, name, department, position, hire_date FROM employees ORDER BY name"
+description = "View all employees"
+icon = "📋"
+
+# Reportes
+[[root.children]]
+id = "reports"
+title = "Reports"
+type = "menu"
+description = "HR Reports and Analytics"
+icon = "📊"
+
+[[root.children.children]]
+id = "dept_summary"
+title = "Department Summary"
+type = "query"
+action = "SELECT department, COUNT(*) as employees, AVG(salary) as avg_salary FROM employees GROUP BY department"
+description = "Summary by department"
+icon = "📈"
+
+[[root.children.children]]
+id = "salary_analysis"
+title = "Salary Analysis"
+type = "query"
+action = "SELECT position, MIN(salary) as min, MAX(salary) as max, AVG(salary) as avg FROM employees GROUP BY position"
+description = "Salary statistics by position"
+icon = "💰"
+
+# Configuración
+[[root.children]]
+id = "settings"
+title = "Settings"
+type = "menu"
+description = "System Configuration"
+icon = "⚙️"
+
+[[root.children.children]]
+id = "db_config"
+title = "Database Config"
+type = "form"
+description = "Configure database connection"
+icon = "🗄️"
+
+[[root.children.children]]
+id = "user_prefs"
+title = "User Preferences"
+type = "form"
+description = "User interface preferences"
+icon = "👤"
+
+# Ayuda
+[[root.children]]
+id = "help"
+title = "Help"
+type = "menu"
+description = "Help and Documentation"
+icon = "❓"
+
+[[root.children.children]]
+id = "user_guide"
+title = "User Guide"
+type = "link"
+description = "Open user documentation"
+icon = "📖"
+
+[[root.children.children]]
+id = "about"
+title = "About"
+type = "link"
+description = "About Noctra HR System"
+icon = "ℹ️"
