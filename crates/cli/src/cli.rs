@@ -17,7 +17,7 @@ pub struct NoctraArgs {
     pub config: Option<PathBuf>,
 
     /// Base de datos SQLite (archivo)
-    #[arg(short, long, value_name = "FILE")]
+    #[arg(long, value_name = "FILE")]
     pub database: Option<PathBuf>,
 
     /// Base de datos en memoria
@@ -29,7 +29,7 @@ pub struct NoctraArgs {
     pub verbose: bool,
 
     /// Modo debug
-    #[arg(short, long)]
+    #[arg(long)]
     pub debug: bool,
 
     /// Activar colores

@@ -2,8 +2,13 @@
 
 use crate::cli::ReplArgs;
 use crate::config::CliConfig;
-use noctra_core::NoctraError;
+use crate::output::format_result_set;
+use noctra_core::{Executor, NoctraError, RqlQuery, Session, SqliteBackend};
+use noctra_parser::RqlParser;
+use std::collections::HashMap;
 use std::io::{self, Write};
+use std::sync::Arc;
+
 type Result<T> = std::result::Result<T, NoctraError>;
 
 /// Handler del REPL
@@ -46,6 +51,15 @@ pub struct Repl {
 
     /// Handler
     handler: ReplHandler,
+
+    /// Executor de queries
+    executor: Executor,
+
+    /// Parser RQL
+    parser: RqlParser,
+
+    /// Sesión actual
+    session: Session,
 }
 
 impl Repl {
@@ -53,7 +67,23 @@ impl Repl {
     pub fn new(config: CliConfig, args: ReplArgs) -> Result<Self> {
         let handler = ReplHandler::new(config.clone(), args)?;
 
-        Ok(Self { config, handler })
+        // Crear backend SQLite
+        let backend = SqliteBackend::with_file(&config.database.connection_string)?;
+        let executor = Executor::new(Arc::new(backend));
+
+        // Crear parser
+        let parser = RqlParser::new();
+
+        // Crear sesión
+        let session = Session::new();
+
+        Ok(Self {
+            config,
+            handler,
+            executor,
+            parser,
+            session,
+        })
     }
 
     /// Ejecutar REPL
@@ -156,15 +186,54 @@ impl Repl {
         }
     }
 
-    /// Ejecutar query (versión simplificada)
+    /// Ejecutar query SQL/RQL
     fn execute_query(&mut self, query: &str) -> Result<bool> {
-        println!("🔍 Ejecutando query...");
+        // Parsear query
+        let sql = match self.parse_query(query) {
+            Ok(s) => s,
+            Err(e) => {
+                println!("❌ Error de sintaxis: {}", e);
+                return Ok(false);
+            }
+        };
 
-        // Por ahora, mostrar el query
-        println!("📝 Query: {}", query);
-        println!("⚠️  Query execution pendiente de implementación");
+        // Ejecutar query
+        let params = HashMap::new();
+        let rql_query = RqlQuery::new(sql, params);
 
-        Ok(false)
+        match self.executor.execute_rql(&self.session, rql_query) {
+            Ok(result_set) => {
+                // Mostrar resultados
+                if result_set.rows.is_empty() {
+                    if let Some(affected) = result_set.rows_affected {
+                        if affected > 0 {
+                            println!("✅ {} filas afectadas", affected);
+                        } else {
+                            println!("✅ Query ejecutado (0 filas)");
+                        }
+                    } else {
+                        println!("✅ Query ejecutado");
+                    }
+                } else {
+                    let table = format_result_set(&result_set);
+                    println!("{}", table);
+                    println!();
+                    println!("({} filas)", result_set.rows.len());
+                }
+                Ok(false)
+            }
+            Err(e) => {
+                println!("❌ Error de ejecución: {}", e);
+                Ok(false)
+            }
+        }
+    }
+
+    /// Parsear query RQL/SQL
+    fn parse_query(&self, query: &str) -> Result<String> {
+        // Por ahora, pasamos directamente el SQL sin parsear RQL
+        // TODO: Usar el parser RQL completo cuando esté listo
+        Ok(query.to_string())
     }
 
     /// Mostrar ayuda
@@ -231,7 +300,7 @@ impl Repl {
 
 impl ReplHandler {
     /// Crear nuevo handler
-    fn new(config: CliConfig, args: ReplArgs) -> Result<Self> {
+    fn new(config: CliConfig, _args: ReplArgs) -> Result<Self> {
         Ok(Self {
             config,
             state: ReplState::Ready,

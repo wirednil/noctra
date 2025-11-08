@@ -9,6 +9,6 @@ pub mod session;
 pub mod types;
 
 pub use error::{NoctraError, Result};
-pub use executor::{Backend, Executor, SqliteBackend};
+pub use executor::{Backend, Executor, RqlQuery, SqliteBackend};
 pub use session::{Session, SessionManager};
 pub use types::{Column, ResultSet, Row, Value};

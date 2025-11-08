@@ -120,3 +120,8 @@ pub fn write_to_stdout(
         _ => TableFormatter.write_result(result, &mut stdout),
     }
 }
+
+/// Helper para formatear result set como tabla (usado por REPL)
+pub fn format_result_set(result: &ResultSet) -> String {
+    TableFormatter.format_result(result)
+}

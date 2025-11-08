@@ -11,7 +11,7 @@ use clap::Parser;
 use log::error;
 use std::process::ExitCode;
 
-use noctra_cli::{build_app as build_cli, NoctraArgs};
+use noctra_cli::{NoctraApp, NoctraArgs};
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -22,7 +22,15 @@ async fn main() -> ExitCode {
     let args = NoctraArgs::parse();
 
     // Build and run the application
-    match build_cli(args).await {
+    let app = match NoctraApp::new(args) {
+        Ok(app) => app,
+        Err(e) => {
+            error!("❌ Error inicializando aplicación: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    match app.run().await {
         Ok(_) => {
             println!("👋 ¡Noctra finalizado correctamente!");
             ExitCode::from(0)
