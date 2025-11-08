@@ -45,8 +45,15 @@ pub struct InteractiveFormExecutor {
 impl InteractiveFormExecutor {
     /// Crear nuevo ejecutor
     pub fn new(form: Form) -> Self {
+        // Detectar tamaño del terminal con mínimo de 80x24
+        let (term_width, term_height) = crossterm::terminal::size().unwrap_or((80, 24));
+        let width = term_width.max(80) as usize;
+        let height = term_height.max(24) as usize;
+
+        let renderer = FormRenderer::new(form).with_size(width, height);
+
         Self {
-            renderer: FormRenderer::new(form),
+            renderer,
             running: false,
         }
     }
@@ -98,8 +105,9 @@ impl InteractiveFormExecutor {
                             break;
                         }
                     }
-                    Event::Resize(_, _) => {
-                        // Manejar resize si es necesario
+                    Event::Resize(_width, _height) => {
+                        // TODO: Implementar set_size() en FormRenderer para no perder estado
+                        // Por ahora ignoramos el resize para no perder datos del formulario
                     }
                     _ => {}
                 }

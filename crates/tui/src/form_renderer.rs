@@ -329,10 +329,19 @@ impl FormRenderer {
         // Footer
         output.push_str(&format!("└{}┘\n", "─".repeat(self.width - 2)));
 
-        // Ayuda
-        output.push_str(&format!(
-            " TAB=Next Field | ENTER=Submit | ESC=Cancel\n"
-        ));
+        // Ayuda - ajustar al ancho del terminal
+        let help_text = " TAB=Next Field | ENTER=Submit | ESC=Cancel";
+        if help_text.len() <= self.width {
+            output.push_str(&format!("{}\n", help_text));
+        } else {
+            // Versión corta si el terminal es muy pequeño
+            let short_help = " TAB=Next | ENTER=Submit | ESC=Cancel";
+            if short_help.len() <= self.width {
+                output.push_str(&format!("{}\n", short_help));
+            } else {
+                output.push_str(&format!("{}\n", &short_help[..self.width.min(short_help.len())]));
+            }
+        }
 
         output
     }
@@ -389,7 +398,11 @@ impl FormRenderer {
             }
         };
 
-        let width = field.width.unwrap_or(30);
+        // Calcular ancho del campo: usar el especificado o ajustar al terminal
+        // Dejar al menos 10 chars para borders y labels (│  [ ] │ = ~7 chars mínimo)
+        let max_field_width = self.width.saturating_sub(10);
+        let desired_width = field.width.unwrap_or(30);
+        let width = desired_width.min(max_field_width);
 
         if state.focused {
             format!("[{}]", self.pad_or_truncate(&value_display, width))
@@ -409,7 +422,16 @@ impl FormRenderer {
             .map(|name| format!("[ {} ]", name.to_uppercase()))
             .collect();
 
-        let buttons_line = format!("│  {}", buttons.join("  "));
+        let mut buttons_text = buttons.join("  ");
+
+        // Truncar si es muy largo para el terminal
+        let max_buttons_len = self.width.saturating_sub(5); // "│  " + " " + "│"
+        if buttons_text.len() > max_buttons_len {
+            buttons_text.truncate(max_buttons_len.saturating_sub(3));
+            buttons_text.push_str("...");
+        }
+
+        let buttons_line = format!("│  {}", buttons_text);
         output.push_str(&buttons_line);
 
         let padding = self.width.saturating_sub(buttons_line.len() + 1);
