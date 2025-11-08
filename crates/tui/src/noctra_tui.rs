@@ -22,7 +22,7 @@ use std::time::Duration;
 use tui_textarea::{Input, TextArea};
 
 // Backend integration
-use noctra_core::{Executor, Session, ResultSet};
+use noctra_core::{Executor, ResultSet, Session};
 
 use crate::nwm::UiMode;
 
@@ -172,6 +172,7 @@ impl<'a> NoctraTui<'a> {
     }
 
     /// Renderizar la interfaz completa (método estático)
+    #[allow(clippy::too_many_arguments)]
     fn render_frame(
         frame: &mut Frame,
         mode: UiMode,
@@ -188,10 +189,10 @@ impl<'a> NoctraTui<'a> {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),      // Header
-                Constraint::Min(10),         // Workspace (área dinámica)
-                Constraint::Length(1),       // Separator
-                Constraint::Length(7),       // Shortcuts bar
+                Constraint::Length(3), // Header
+                Constraint::Min(10),   // Workspace (área dinámica)
+                Constraint::Length(1), // Separator
+                Constraint::Length(7), // Shortcuts bar
             ])
             .split(size);
 
@@ -220,27 +221,31 @@ impl<'a> NoctraTui<'a> {
             UiMode::Dialog => "DIÁLOGO",
         };
 
-        let header_text = format!(
-            "──( {} ) SQL Noctra 0.1.0",
-            mode_text
-        );
+        let header_text = format!("──( {} ) SQL Noctra 0.1.0", mode_text);
 
         let cmd_text = format!("Cmd: {}───", command_number);
 
         // Calcular padding para alinear a la derecha
-        let padding_len = area.width.saturating_sub(header_text.len() as u16 + cmd_text.len() as u16);
+        let padding_len = area
+            .width
+            .saturating_sub(header_text.len() as u16 + cmd_text.len() as u16);
         let padding = "─".repeat(padding_len as usize);
 
         let full_header = format!("{}{}{}", header_text, padding, cmd_text);
 
         let header = Paragraph::new(full_header)
-            .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+            .style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
             .alignment(Alignment::Left);
 
         frame.render_widget(header, area);
     }
 
     /// Renderizar área de trabajo (cambia según el modo)
+    #[allow(clippy::too_many_arguments)]
     fn render_workspace(
         frame: &mut Frame,
         area: Rect,
@@ -254,7 +259,13 @@ impl<'a> NoctraTui<'a> {
         match mode {
             UiMode::Command => Self::render_command_mode(frame, area, command_editor),
             UiMode::Result => Self::render_result_mode(frame, area, current_results),
-            UiMode::Dialog => Self::render_dialog_mode(frame, area, dialog_message, dialog_options, dialog_selected),
+            UiMode::Dialog => Self::render_dialog_mode(
+                frame,
+                area,
+                dialog_message,
+                dialog_options,
+                dialog_selected,
+            ),
             UiMode::Form => Self::render_form_mode(frame, area),
         }
     }
@@ -268,8 +279,9 @@ impl<'a> NoctraTui<'a> {
     fn render_result_mode(frame: &mut Frame, area: Rect, current_results: Option<&QueryResults>) {
         if let Some(results) = current_results {
             // Crear tabla con bordes ASCII
-            let header_cells = results.columns.iter()
-                .map(|col| Cell::from(col.as_str()).style(Style::default().add_modifier(Modifier::BOLD)));
+            let header_cells = results.columns.iter().map(|col| {
+                Cell::from(col.as_str()).style(Style::default().add_modifier(Modifier::BOLD))
+            });
 
             let header = Row::new(header_cells)
                 .style(Style::default().fg(Color::Yellow))
@@ -281,15 +293,19 @@ impl<'a> NoctraTui<'a> {
             });
 
             // Calcular ancho de columnas automáticamente
-            let col_widths: Vec<Constraint> = results.columns.iter()
+            let col_widths: Vec<Constraint> = results
+                .columns
+                .iter()
                 .map(|_| Constraint::Percentage((100 / results.columns.len().max(1)) as u16))
                 .collect();
 
             let table = Table::new(rows)
                 .header(header)
-                .block(Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Green)))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Green)),
+                )
                 .widths(&col_widths)
                 .style(Style::default().fg(Color::White));
 
@@ -302,8 +318,8 @@ impl<'a> NoctraTui<'a> {
                 ..area
             };
 
-            let status = Paragraph::new(results.status.as_str())
-                .style(Style::default().fg(Color::Gray));
+            let status =
+                Paragraph::new(results.status.as_str()).style(Style::default().fg(Color::Gray));
 
             frame.render_widget(status, status_area);
         } else {
@@ -349,9 +365,9 @@ impl<'a> NoctraTui<'a> {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(2),  // Mensaje
-                    Constraint::Length(1),  // Espacio
-                    Constraint::Length(3),  // Botones
+                    Constraint::Length(2), // Mensaje
+                    Constraint::Length(1), // Espacio
+                    Constraint::Length(3), // Botones
                 ])
                 .split(inner);
 
@@ -366,15 +382,19 @@ impl<'a> NoctraTui<'a> {
             let button_layout = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints(
-                    dialog_options.iter()
+                    dialog_options
+                        .iter()
                         .map(|_| Constraint::Percentage((100 / dialog_options.len().max(1)) as u16))
-                        .collect::<Vec<_>>()
+                        .collect::<Vec<_>>(),
                 )
                 .split(chunks[2]);
 
             for (i, option) in dialog_options.iter().enumerate() {
                 let style = if i == dialog_selected {
-                    Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::Yellow)
                 };
@@ -421,24 +441,28 @@ impl<'a> NoctraTui<'a> {
             ("Alt+w", "Grabar en archivo"),
         ];
 
-        let lines: Vec<Line> = shortcuts.chunks(2).map(|chunk| {
-            let mut spans = Vec::new();
-            for (key, desc) in chunk {
-                spans.push(Span::styled(
-                    format!("{:<15}", key),
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-                ));
-                spans.push(Span::raw(":"));
-                spans.push(Span::styled(
-                    format!("{:<35}", desc),
-                    Style::default().fg(Color::White)
-                ));
-            }
-            Line::from(spans)
-        }).collect();
+        let lines: Vec<Line> = shortcuts
+            .chunks(2)
+            .map(|chunk| {
+                let mut spans = Vec::new();
+                for (key, desc) in chunk {
+                    spans.push(Span::styled(
+                        format!("{:<15}", key),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                    spans.push(Span::raw(":"));
+                    spans.push(Span::styled(
+                        format!("{:<35}", desc),
+                        Style::default().fg(Color::White),
+                    ));
+                }
+                Line::from(spans)
+            })
+            .collect();
 
-        let shortcuts_widget = Paragraph::new(lines)
-            .style(Style::default().fg(Color::White));
+        let shortcuts_widget = Paragraph::new(lines).style(Style::default().fg(Color::White));
 
         frame.render_widget(shortcuts_widget, area);
     }
@@ -551,12 +575,7 @@ impl<'a> NoctraTui<'a> {
         let rows: Vec<Vec<String>> = result_set
             .rows
             .iter()
-            .map(|row| {
-                row.values
-                    .iter()
-                    .map(|value| value.to_string())
-                    .collect()
-            })
+            .map(|row| row.values.iter().map(|value| value.to_string()).collect())
             .collect();
 
         // Construir mensaje de estado
@@ -582,7 +601,11 @@ impl<'a> NoctraTui<'a> {
             if row_count == 0 {
                 format!("Sin resultados - Comando: {}", command.trim())
             } else {
-                format!("{} fila(s) retornada(s) - Comando: {}", row_count, command.trim())
+                format!(
+                    "{} fila(s) retornada(s) - Comando: {}",
+                    row_count,
+                    command.trim()
+                )
             }
         };
 
@@ -629,9 +652,11 @@ impl<'a> NoctraTui<'a> {
     /// Limpiar el editor de comandos
     fn clear_command_editor(&mut self) {
         self.command_editor = TextArea::default();
-        self.command_editor.set_block(Block::default().borders(Borders::NONE));
+        self.command_editor
+            .set_block(Block::default().borders(Borders::NONE));
         self.command_editor.set_cursor_line_style(Style::default());
-        self.command_editor.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
+        self.command_editor
+            .set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
     }
 
     /// Mostrar diálogo de error
@@ -678,7 +703,8 @@ impl<'a> NoctraTui<'a> {
         if let Some(idx) = self.history_index {
             if let Some(cmd) = self.command_history.get(idx) {
                 self.command_editor = TextArea::from(cmd.lines());
-                self.command_editor.set_block(Block::default().borders(Borders::NONE));
+                self.command_editor
+                    .set_block(Block::default().borders(Borders::NONE));
             }
         }
     }

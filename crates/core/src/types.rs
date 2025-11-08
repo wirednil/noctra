@@ -60,7 +60,6 @@ impl Value {
     pub fn is_null(&self) -> bool {
         matches!(self, Self::Null)
     }
-
 }
 
 impl Default for Value {

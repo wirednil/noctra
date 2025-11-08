@@ -526,7 +526,6 @@ pub async fn execute_command(input: &str, config: CliConfig) -> CommandResult {
 
 /// Funciones de utilidad para parsing de comandos
 pub mod parsing {
-    
 
     /// Parsear parámetros de comando
     pub fn parse_params(input: &str) -> Vec<String> {

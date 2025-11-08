@@ -7,10 +7,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{
-    backend::CrosstermBackend,
-    Terminal,
-};
+use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io::{stdout, Stdout};
 use std::time::Duration;
 
@@ -60,8 +57,8 @@ impl InteractiveFormExecutor {
             .map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
 
         let backend = CrosstermBackend::new(stdout);
-        let terminal = Terminal::new(backend)
-            .map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
+        let terminal =
+            Terminal::new(backend).map_err(|e| InteractiveError::TerminalError(e.to_string()))?;
 
         Ok(Self {
             renderer,
@@ -93,9 +90,7 @@ impl InteractiveFormExecutor {
     }
 
     /// Loop principal de eventos
-    fn run_loop(
-        &mut self,
-    ) -> InteractiveResult<Option<std::collections::HashMap<String, String>>> {
+    fn run_loop(&mut self) -> InteractiveResult<Option<std::collections::HashMap<String, String>>> {
         while self.running {
             // Renderizar usando ratatui
             self.terminal
@@ -174,8 +169,7 @@ impl InteractiveFormExecutor {
 
             // Backspace - Eliminar carácter
             KeyCode::Backspace => {
-                if let Some(field_name) = self.renderer.get_focused_field().map(|s| s.to_string())
-                {
+                if let Some(field_name) = self.renderer.get_focused_field().map(|s| s.to_string()) {
                     let current_value = self
                         .renderer
                         .get_field_value(&field_name)
@@ -191,8 +185,7 @@ impl InteractiveFormExecutor {
 
             // Caracteres normales
             KeyCode::Char(c) => {
-                if let Some(field_name) = self.renderer.get_focused_field().map(|s| s.to_string())
-                {
+                if let Some(field_name) = self.renderer.get_focused_field().map(|s| s.to_string()) {
                     let current_value = self
                         .renderer
                         .get_field_value(&field_name)

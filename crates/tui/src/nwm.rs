@@ -110,7 +110,7 @@ pub enum WindowContent {
     ResultSet(ResultSet),
 
     /// Formulario FDL2
-    Form(Form),
+    Form(Box<Form>),
 
     /// Widget personalizado
     Widget(Box<dyn Widget>),
@@ -160,7 +160,7 @@ impl NwmWindow {
 
     /// Crear ventana de formulario
     pub fn form(id: String, title: String, form: Form) -> Self {
-        Self::new(id, title, UiMode::Form, WindowContent::Form(form))
+        Self::new(id, title, UiMode::Form, WindowContent::Form(Box::new(form)))
     }
 
     /// Crear ventana de diálogo
@@ -240,10 +240,6 @@ impl NoctraWindowManager {
         }
     }
 
-    /// Crear con configuración por defecto
-    pub fn default() -> Self {
-        Self::new(NwmConfig::default())
-    }
 
     /// Establecer navegador de grafo
     pub fn with_navigator(mut self, navigator: GraphNavigator) -> Self {
@@ -253,9 +249,7 @@ impl NoctraWindowManager {
 
     /// Obtener ventana actual
     pub fn current_window(&self) -> NwmResult<&NwmWindow> {
-        self.window_stack
-            .back()
-            .ok_or(NwmError::EmptyWindowStack)
+        self.window_stack.back().ok_or(NwmError::EmptyWindowStack)
     }
 
     /// Obtener ventana actual (mutable)
@@ -325,18 +319,14 @@ impl NoctraWindowManager {
 
     /// Obtener breadcrumb de navegación
     pub fn get_breadcrumb(&self) -> Vec<String> {
-        self.window_stack
-            .iter()
-            .map(|w| w.title.clone())
-            .collect()
+        self.window_stack.iter().map(|w| w.title.clone()).collect()
     }
 
     /// Renderizar layout completo
     pub fn render_layout(&self, terminal_size: (usize, usize)) -> NwmResult<String> {
         let (term_height, term_width) = terminal_size;
 
-        if term_width < self.config.min_window_size.0
-            || term_height < self.config.min_window_size.1
+        if term_width < self.config.min_window_size.0 || term_height < self.config.min_window_size.1
         {
             return Err(NwmError::RenderError(format!(
                 "Terminal muy pequeño: {}x{} (mínimo {}x{})",
@@ -401,7 +391,12 @@ impl NoctraWindowManager {
         let mut output = String::new();
 
         // Título de la ventana
-        let title_line = format!(" {} {} - {} ", window.mode.icon(), window.title, window.mode.description());
+        let title_line = format!(
+            " {} {} - {} ",
+            window.mode.icon(),
+            window.title,
+            window.mode.description()
+        );
         output.push_str(&title_line);
         output.push_str(&" ".repeat(width.saturating_sub(title_line.len())));
         output.push('\n');
@@ -502,13 +497,22 @@ impl NoctraWindowManager {
     }
 }
 
+impl Default for NoctraWindowManager {
+    fn default() -> Self {
+        Self::new(NwmConfig::default())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_ui_mode() {
-        assert_eq!(UiMode::Command.description(), "Command Mode - Interactive REPL");
+        assert_eq!(
+            UiMode::Command.description(),
+            "Command Mode - Interactive REPL"
+        );
         assert_eq!(UiMode::Result.icon(), "📊");
     }
 
@@ -547,15 +551,19 @@ mod tests {
         let mut nwm = NoctraWindowManager::default();
 
         nwm.push_window(NwmWindow::command("root".to_string(), "Root".to_string()));
-        nwm.push_window(NwmWindow::form("forms".to_string(), "Forms".to_string(), noctra_formlib::Form {
-            title: "Test".to_string(),
-            schema: None,
-            description: None,
-            fields: std::collections::HashMap::new(),
-            actions: std::collections::HashMap::new(),
-            ui_config: None,
-            pagination: None,
-        }));
+        nwm.push_window(NwmWindow::form(
+            "forms".to_string(),
+            "Forms".to_string(),
+            noctra_formlib::Form {
+                title: "Test".to_string(),
+                schema: None,
+                description: None,
+                fields: std::collections::HashMap::new(),
+                actions: std::collections::HashMap::new(),
+                ui_config: None,
+                pagination: None,
+            },
+        ));
 
         let breadcrumb = nwm.get_breadcrumb();
         assert_eq!(breadcrumb, vec!["Root", "Forms"]);

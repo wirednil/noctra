@@ -549,10 +549,8 @@ impl Component for FormComponent {
                                 }
                             }
                             crossterm::event::KeyCode::Char(c) => {
-                                let value = self
-                                    .field_values
-                                    .entry(field_name.clone())
-                                    .or_default();
+                                let value =
+                                    self.field_values.entry(field_name.clone()).or_default();
                                 value.push(c);
                                 self.cursor_position += 1;
                             }

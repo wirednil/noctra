@@ -407,7 +407,7 @@ impl NoctraApp {
 
         // Crear TUI con base de datos si se especificó
         let mut tui = if let Some(db_path) = args.database {
-            NoctraTui::with_database(db_path.to_string_lossy().to_string())?
+            NoctraTui::with_database(db_path.to_string_lossy())?
         } else {
             NoctraTui::new()?
         };
@@ -449,10 +449,7 @@ impl NoctraApp {
     }
 
     /// Cargar y validar formulario
-    async fn run_form_load(
-        &self,
-        args: FormLoadArgs,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    async fn run_form_load(&self, args: FormLoadArgs) -> Result<(), Box<dyn std::error::Error>> {
         use noctra_formlib::load_form_from_path;
 
         println!("📋 Cargando formulario: {}", args.file.display());
@@ -511,10 +508,7 @@ impl NoctraApp {
     }
 
     /// Ejecutar formulario interactivamente
-    async fn run_form_exec(
-        &self,
-        args: FormExecArgs,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    async fn run_form_exec(&self, args: FormExecArgs) -> Result<(), Box<dyn std::error::Error>> {
         use noctra_formlib::load_form_from_path;
 
         println!("🚀 Ejecutando formulario: {}", args.file.display());
@@ -630,7 +624,10 @@ impl NoctraApp {
         println!("\n{}", renderer.render_to_string());
 
         println!("\n✨ Este es un preview del formulario.");
-        println!("   Usa 'noctra form exec {}' para ejecutarlo.", args.file.display());
+        println!(
+            "   Usa 'noctra form exec {}' para ejecutarlo.",
+            args.file.display()
+        );
 
         Ok(())
     }

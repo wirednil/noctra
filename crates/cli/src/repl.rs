@@ -327,4 +327,3 @@ fn read_input(prompt: &str) -> Result<String> {
 
 /// Resultado de comando
 pub type CommandResult = Result<bool>;
-

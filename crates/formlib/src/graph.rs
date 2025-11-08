@@ -138,18 +138,14 @@ impl FormGraph {
     /// Cargar grafo desde archivo TOML
     pub fn load_from_file(path: &Path) -> GraphResult<Self> {
         if !path.exists() {
-            return Err(GraphError::InvalidPath(
-                path.to_string_lossy().to_string(),
-            ));
+            return Err(GraphError::InvalidPath(path.to_string_lossy().to_string()));
         }
 
-        let content = std::fs::read_to_string(path).map_err(|e| {
-            GraphError::InvalidPath(format!("{}: {}", path.display(), e))
-        })?;
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| GraphError::InvalidPath(format!("{}: {}", path.display(), e)))?;
 
-        let graph: FormGraph = toml::from_str(&content).map_err(|e| {
-            GraphError::InvalidConfig(format!("Error parseando TOML: {}", e))
-        })?;
+        let graph: FormGraph = toml::from_str(&content)
+            .map_err(|e| GraphError::InvalidConfig(format!("Error parseando TOML: {}", e)))?;
 
         // Validar el grafo
         graph.validate()?;
@@ -171,11 +167,8 @@ impl FormGraph {
     }
 
     /// Verificar ciclos en el grafo
-    fn check_cycles(
-        &self,
-        node: &NodeDefinition,
-        visited: &mut Vec<String>,
-    ) -> GraphResult<()> {
+    #[allow(clippy::only_used_in_recursion)]
+    fn check_cycles(&self, node: &NodeDefinition, visited: &mut Vec<String>) -> GraphResult<()> {
         if visited.contains(&node.id) {
             return Err(GraphError::CycleDetected(format!(
                 "Ciclo en nodo '{}': {:?}",
@@ -231,6 +224,7 @@ impl FormGraph {
     }
 
     /// Buscar nodo recursivamente
+    #[allow(clippy::only_used_in_recursion)]
     fn find_node_recursive<'a>(
         &'a self,
         node: &'a NodeDefinition,
@@ -260,13 +254,9 @@ impl FormGraph {
             )));
         }
 
-        let path = node
-            .path
-            .as_ref()
-            .ok_or_else(|| GraphError::InvalidConfig(format!(
-                "Nodo '{}' no tiene path definido",
-                node_id
-            )))?;
+        let path = node.path.as_ref().ok_or_else(|| {
+            GraphError::InvalidConfig(format!("Nodo '{}' no tiene path definido", node_id))
+        })?;
 
         let full_path = self.resolve_path(path);
         load_form_from_path(&full_path).map_err(GraphError::LoadError)
@@ -286,6 +276,7 @@ impl FormGraph {
     }
 
     /// Construir breadcrumb recursivamente
+    #[allow(clippy::only_used_in_recursion)]
     fn build_breadcrumb(
         &self,
         node: &NodeDefinition,

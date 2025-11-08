@@ -14,8 +14,8 @@ use ratatui::{
     Frame,
 };
 
-use noctra_formlib::{FieldType, Form, ValidationError};
 use noctra_formlib::validation::FormValidator;
+use noctra_formlib::{FieldType, Form, ValidationError};
 
 /// Error del FormRenderer
 #[derive(Error, Debug)]
@@ -264,10 +264,10 @@ impl FormRenderer {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),      // Header con título
-                Constraint::Min(3),          // Campos
-                Constraint::Length(3),       // Botones
-                Constraint::Length(1),       // Ayuda
+                Constraint::Length(3), // Header con título
+                Constraint::Min(3),    // Campos
+                Constraint::Length(3), // Botones
+                Constraint::Length(1), // Ayuda
             ])
             .split(area);
 
@@ -291,20 +291,28 @@ impl FormRenderer {
 
         let text = if !desc.is_empty() {
             Text::from(vec![
-                Line::from(Span::styled(title, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+                Line::from(Span::styled(
+                    title,
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )),
                 Line::from(Span::styled(desc, Style::default().fg(Color::Gray))),
             ])
         } else {
-            Text::from(Line::from(Span::styled(title, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))))
+            Text::from(Line::from(Span::styled(
+                title,
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )))
         };
 
         let block = Block::default()
             .borders(Borders::ALL)
             .style(Style::default());
 
-        let paragraph = Paragraph::new(text)
-            .block(block)
-            .wrap(Wrap { trim: true });
+        let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
 
         frame.render_widget(paragraph, area);
     }
@@ -327,7 +335,9 @@ impl FormRenderer {
                 let required_marker = if field.required { "*" } else { " " };
 
                 let label_style = if state.focused {
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
                 };
@@ -383,8 +393,7 @@ impl FormRenderer {
             }
         }
 
-        let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title("Fields"));
+        let list = List::new(items).block(Block::default().borders(Borders::ALL).title("Fields"));
 
         frame.render_widget(list, area);
     }
@@ -398,15 +407,12 @@ impl FormRenderer {
             .map(|name| format!("[ {} ]", name.to_uppercase()))
             .collect();
 
-        let text = Text::from(Line::from(
-            Span::styled(
-                buttons.join("  "),
-                Style::default().fg(Color::Cyan),
-            )
-        ));
+        let text = Text::from(Line::from(Span::styled(
+            buttons.join("  "),
+            Style::default().fg(Color::Cyan),
+        )));
 
-        let paragraph = Paragraph::new(text)
-            .block(Block::default().borders(Borders::ALL));
+        let paragraph = Paragraph::new(text).block(Block::default().borders(Borders::ALL));
 
         frame.render_widget(paragraph, area);
     }
@@ -415,9 +421,10 @@ impl FormRenderer {
     fn render_help(&self, frame: &mut Frame, area: Rect) {
         let help_text = " TAB=Next | Shift+TAB=Prev | ENTER=Submit | ESC=Cancel";
 
-        let text = Text::from(Line::from(
-            Span::styled(help_text, Style::default().fg(Color::Gray))
-        ));
+        let text = Text::from(Line::from(Span::styled(
+            help_text,
+            Style::default().fg(Color::Gray),
+        )));
 
         let paragraph = Paragraph::new(text);
         frame.render_widget(paragraph, area);
@@ -459,7 +466,11 @@ impl FormRenderer {
                     }
                 };
 
-                let brackets = if state.focused { ("[", "]") } else { (" ", " ") };
+                let brackets = if state.focused {
+                    ("[", "]")
+                } else {
+                    (" ", " ")
+                };
                 output.push_str(&format!("│  {}{}{}\n", brackets.0, value, brackets.1));
 
                 for error in &state.errors {
@@ -487,7 +498,7 @@ impl FormRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use noctra_formlib::{Form, FormField, FieldType, FormAction};
+    use noctra_formlib::{FieldType, Form, FormField};
 
     fn create_test_form() -> Form {
         let mut fields = HashMap::new();
