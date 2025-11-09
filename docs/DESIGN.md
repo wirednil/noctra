@@ -1,8 +1,8 @@
 # Noctra - Technical Design Document
 
-> **Version:** 1.1
+> **Version:** 1.2
 > **Date:** 2025-11-09
-> **Status:** Active Development - M4 (NQL Implementation)
+> **Status:** Active Development - M3.5 Complete, Planning M4 & M6 (Noctra 2.0)
 
 ## Table of Contents
 
@@ -16,6 +16,8 @@
 8. [Security & Performance](#8-security--performance)
 9. [Testing Strategy](#9-testing-strategy)
 10. [Deployment & Operations](#10-deployment--operations)
+11. [NQL - Noctra Query Language](#11-nql---noctra-query-language-m4)
+12. [Noctra 2.0 FABRIC - DuckDB Integration](#12-noctra-20-fabric---duckdb-integration)
 
 ---
 
@@ -1927,6 +1929,544 @@ WHERE o.order_date >= '2024-01-01';
 
 ---
 
+## 12. Noctra 2.0 FABRIC - DuckDB Integration
+
+### 12.1 Vision & Objectives
+
+**Mantra:** *"No importes datos. Consúltalos."*
+
+Noctra 2.0 "FABRIC" transforms Noctra into a **Data Fabric Engine** by integrating DuckDB as the primary ad hoc analytics engine, enabling direct queries on files (CSV, JSON, Parquet) without staging or mandatory databases.
+
+**Core Innovation:**
+- **Files → Tables**: Any file becomes a queryable table instantly
+- **Zero-Copy Analytics**: Query files directly without imports
+- **Optional Databases**: Databases become optional, not required
+
+### 12.2 Architecture Overview
+
+#### Query Engine Evolution
+
+```rust
+// noctra-core/src/engine.rs
+pub enum QueryEngine {
+    Sqlite(Box<dyn DatabaseBackend>),
+    DuckDB(DuckDBConnection),        // ← NEW: Pure DuckDB mode
+    Hybrid {                          // ← NEW: Default mode
+        duckdb: DuckDBConnection,     // Handles files (CSV, JSON, Parquet)
+        sqlite: SqliteConnection,     // Handles SQLite databases
+    },
+}
+
+impl QueryEngine {
+    /// Route queries to appropriate engine based on source type
+    pub async fn execute(&mut self, nql: &NqlStatement) -> Result<ResultSet> {
+        match self {
+            Self::DuckDB(conn) => conn.execute_nql(nql).await,
+            Self::Hybrid { duckdb, sqlite } => {
+                match nql.source_type()? {
+                    SourceType::Csv | SourceType::Json | SourceType::Parquet
+                        => duckdb.execute_nql(nql).await,
+                    SourceType::Sqlite
+                        => sqlite.execute_nql(nql).await,
+                }
+            },
+            Self::Sqlite(backend) => backend.execute(nql).await,
+        }
+    }
+
+    /// Create hybrid engine (default)
+    pub fn new_hybrid() -> Result<Self> {
+        Ok(Self::Hybrid {
+            duckdb: DuckDBConnection::new_in_memory()?,
+            sqlite: SqliteConnection::new_in_memory()?,
+        })
+    }
+}
+```
+
+#### Routing Logic
+
+| Source Type | Engine | Implementation |
+|-------------|--------|----------------|
+| CSV files | DuckDB | `read_csv_auto('file.csv')` |
+| JSON files | DuckDB | `read_json_auto('file.json')` |
+| Parquet files | DuckDB | `read_parquet('file.parquet')` |
+| SQLite databases | SQLite | Native connection |
+| Cross-source JOINs | DuckDB | `ATTACH 'db.sqlite' AS alias (TYPE SQLITE)` |
+
+### 12.3 New Crate: `noctra-duckdb`
+
+#### Structure
+
+```
+noctra/
+├── crates/
+│   ├── noctra-core/
+│   │   └── src/
+│   │       ├── engine.rs           # + QueryEngine::DuckDB, Hybrid
+│   │       └── datasource.rs       # (existing)
+│   ├── noctra-parser/
+│   │   └── src/
+│   │       └── nql.rs              # + EXPORT, MAP, FILTER variants
+│   ├── noctra-duckdb/              # ← NEW CRATE
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs              # Public API
+│   │       ├── source.rs           # DuckDBSource (DataSource impl)
+│   │       ├── engine.rs           # Query execution logic
+│   │       ├── extensions.rs       # Format support (JSON, Parquet)
+│   │       └── attach.rs           # SQLite ATTACH logic
+│   ├── noctra-tui/
+│   │   └── src/
+│   │       └── noctra_tui.rs       # + Engine indicator, source icons
+│   └── noctra-cli/
+│       └── src/
+│           └── main.rs             # + --engine flag
+```
+
+#### Dependencies
+
+```toml
+# crates/noctra-duckdb/Cargo.toml
+[package]
+name = "noctra-duckdb"
+version = "2.0.0"
+edition = "2021"
+
+[dependencies]
+duckdb = { version = "1.1", features = ["bundled", "parquet", "json"] }
+noctra-core = { path = "../noctra-core" }
+anyhow = "1.0"
+log = "0.4"
+
+[dev-dependencies]
+tempfile = "3.0"
+```
+
+#### Core Implementation
+
+```rust
+// noctra-duckdb/src/source.rs
+use duckdb::{Connection, params};
+use noctra_core::{DataSource, ResultSet, Parameters, Value, SourceType, TableInfo};
+
+pub struct DuckDBSource {
+    conn: Connection,
+    name: String,
+}
+
+impl DuckDBSource {
+    /// Create in-memory DuckDB connection
+    pub fn new_in_memory() -> Result<Self> {
+        Ok(Self {
+            conn: Connection::open_in_memory()?,
+            name: "duckdb".to_string(),
+        })
+    }
+
+    /// Register file as virtual table
+    pub fn register_file(&mut self, path: &str, alias: &str) -> Result<()> {
+        let ext = std::path::Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+
+        let sql = match ext {
+            "csv" | "tsv" => {
+                // Auto-detect delimiters, headers, types
+                format!("CREATE VIEW {} AS SELECT * FROM read_csv_auto('{}')", alias, path)
+            },
+            "json" => {
+                format!("CREATE VIEW {} AS SELECT * FROM read_json_auto('{}')", alias, path)
+            },
+            "parquet" => {
+                format!("CREATE VIEW {} AS SELECT * FROM read_parquet('{}')", alias, path)
+            },
+            _ => return Err(anyhow!("Unsupported file type: {}", ext)),
+        };
+
+        self.conn.execute(&sql, [])?;
+        log::info!("Registered {} as virtual table '{}'", path, alias);
+        Ok(())
+    }
+
+    /// Attach SQLite database for cross-source queries
+    pub fn attach_sqlite(&mut self, db_path: &str, alias: &str) -> Result<()> {
+        self.conn.execute(
+            &format!("ATTACH '{}' AS {} (TYPE SQLITE)", db_path, alias),
+            [],
+        )?;
+        log::info!("Attached SQLite database {} as '{}'", db_path, alias);
+        Ok(())
+    }
+}
+
+impl DataSource for DuckDBSource {
+    fn query(&self, sql: &str, params: &Parameters) -> Result<ResultSet> {
+        let mut stmt = self.conn.prepare(sql)?;
+
+        // Convert Parameters to DuckDB format
+        let duckdb_params = params.to_duckdb_params();
+
+        let rows = stmt.query_map(&duckdb_params[..], |row| {
+            // Convert DuckDB row to noctra ResultSet
+            convert_row(row)
+        })?;
+
+        Ok(ResultSet::from_rows(rows))
+    }
+
+    fn schema(&self) -> Result<Vec<TableInfo>> {
+        let sql = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'";
+        // ... implementation
+    }
+
+    fn name(&self) -> &str { &self.name }
+
+    fn source_type(&self) -> &SourceType { &SourceType::DuckDB }
+}
+```
+
+### 12.4 NQL 2.0 Extensions
+
+#### Command Mappings
+
+| NQL Command | DuckDB SQL | Purpose |
+|-------------|------------|---------|
+| `USE 'file.csv' AS t` | `CREATE VIEW t AS SELECT * FROM read_csv_auto('file.csv')` | Register file as table |
+| `USE 'data/*.csv'` | `SELECT * FROM read_csv('data/sales_*.csv', AUTO_DETECT=TRUE)` | Multi-file glob |
+| `USE 'data.csv.gz'` | Automatic decompression | Compressed file support |
+| `DESCRIBE t` | `PRAGMA table_info(t)` | Show schema |
+| `EXPORT ... TO 'f.json'` | `COPY (...) TO 'f.json' (FORMAT JSON)` | Export to JSON |
+| `EXPORT ... TO 'f.parquet'` | `COPY (...) TO 'f.parquet' (FORMAT PARQUET)` | Export to Parquet |
+
+#### EXPORT Command
+
+```rust
+// noctra-parser/src/nql.rs
+pub enum NqlStatement {
+    // ... existing variants
+
+    Export {
+        query: Box<NqlStatement>,  // Query to export
+        path: String,               // Destination file
+        format: ExportFormat,       // CSV, JSON, Parquet, Excel
+        options: HashMap<String, String>,
+    },
+}
+
+pub enum ExportFormat {
+    Csv,
+    Json,
+    Parquet,
+    Excel,
+}
+```
+
+**Usage:**
+```sql
+EXPORT (SELECT * FROM 'sales.csv' WHERE region = 'LATAM')
+TO 'latam_sales.parquet' FORMAT PARQUET;
+```
+
+**Translation:**
+```sql
+COPY (SELECT * FROM 'sales.csv' WHERE region = 'LATAM')
+TO 'latam_sales.parquet' (FORMAT PARQUET);
+```
+
+#### MAP/FILTER Commands
+
+```rust
+pub enum NqlStatement {
+    Map {
+        transformations: Vec<MapTransform>,
+        table: String,
+    },
+    Filter {
+        condition: Expr,
+        table: String,
+    },
+}
+
+pub struct MapTransform {
+    pub column: String,
+    pub expression: Expr,
+}
+```
+
+**Usage:**
+```sql
+USE 'data.csv';
+MAP
+    price = price * 1.1,
+    category = UPPER(category),
+    is_premium = CASE WHEN price > 1000 THEN true ELSE false END;
+FILTER active = true AND date >= '2024-01-01';
+SELECT * FROM data;
+```
+
+**Translation (CTE):**
+```sql
+WITH transformed AS (
+    SELECT
+        price * 1.1 AS price,
+        UPPER(category) AS category,
+        CASE WHEN price > 1000 THEN true ELSE false END AS is_premium,
+        *
+    FROM data
+    WHERE active = true AND date >= '2024-01-01'
+)
+SELECT * FROM transformed;
+```
+
+### 12.5 TUI Enhancements
+
+#### Dynamic Status Bar
+
+```rust
+// noctra-tui/src/noctra_tui.rs
+fn render_status_bar(&self, area: Rect, buf: &mut Buffer) {
+    let engine_name = match &self.query_engine {
+        QueryEngine::DuckDB(_) => "🦆 DuckDB",
+        QueryEngine::Sqlite(_) => "📦 SQLite",
+        QueryEngine::Hybrid { .. } => "🔀 Hybrid",
+    };
+
+    let source_info = self.active_source()
+        .map(|s| format!("Source: '{}' ({})", s.name(), s.source_type()))
+        .unwrap_or_else(|| "No source".to_string());
+
+    let memory_info = format!("Memory: {}MB", self.get_memory_usage_mb());
+
+    let status = format!(
+        " Engine: {} │ {} │ {} │ {}ms ",
+        engine_name,
+        source_info,
+        memory_info,
+        self.last_query_time.as_millis()
+    );
+
+    // Render...
+}
+```
+
+**Visual Output:**
+```
+──( RESULT ) Noctra 2.0 ─── Engine: 🦆 DuckDB ─── Source: 'ventas.csv' (CSV) ─── Memory: 45MB ─── 12ms
+```
+
+#### Source Type Icons
+
+```rust
+fn get_source_icon(source_type: &SourceType) -> &'static str {
+    match source_type {
+        SourceType::Csv => "🦆",
+        SourceType::Json => "🦆",
+        SourceType::Parquet => "🦆",
+        SourceType::Sqlite => "📦",
+        SourceType::Memory => "💾",
+        SourceType::DuckDB => "🦆",
+    }
+}
+```
+
+### 12.6 CLI Modes
+
+#### Ad Hoc Mode (DuckDB Only)
+
+```bash
+noctra --engine duckdb --use 'sales_2024.csv'
+```
+
+- No SQLite database required
+- Pure file-based analytics
+- Lightweight and fast startup
+
+#### Hybrid Mode (Default)
+
+```bash
+noctra --engine hybrid --db warehouse.db --use 'recent_sales.csv'
+```
+
+- SQLite for persistent data
+- DuckDB for file queries
+- Automatic routing
+
+#### Traditional Mode (SQLite Only)
+
+```bash
+noctra --engine sqlite --db database.db
+```
+
+- Backward compatible
+- Original Noctra behavior
+- No DuckDB dependency
+
+### 12.7 Configuration System
+
+**Location:** `~/.config/noctra/config.toml`
+
+```toml
+[engine]
+default = "hybrid"  # duckdb, sqlite, hybrid
+
+[duckdb]
+temp_dir = "/tmp/noctra-duckdb"
+memory_limit = "2GB"
+threads = 4
+enable_profiling = false
+
+[duckdb.extensions]
+auto_install = true
+enabled = ["parquet", "json", "excel"]
+
+[csv]
+auto_detect = true
+sample_rows = 100
+null_values = ["NA", "", "NULL"]
+delimiter_candidates = [",", ";", "\t", "|"]
+
+[export]
+default_format = "csv"
+compression = "auto"  # auto, gzip, none
+
+[performance]
+query_cache_size = "500MB"
+max_result_rows = 10000
+streaming_threshold = 1000
+```
+
+**Loading:**
+```rust
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub struct NoctraConfig {
+    pub engine: EngineConfig,
+    pub duckdb: DuckDBConfig,
+    pub csv: CsvConfig,
+    pub export: ExportConfig,
+    pub performance: PerformanceConfig,
+}
+
+impl NoctraConfig {
+    pub fn load() -> Result<Self> {
+        let config_path = dirs::config_dir()
+            .ok_or_else(|| anyhow!("Config directory not found"))?
+            .join("noctra/config.toml");
+
+        if !config_path.exists() {
+            return Ok(Self::default());
+        }
+
+        let content = std::fs::read_to_string(&config_path)?;
+        toml::from_str(&content).map_err(Into::into)
+    }
+}
+```
+
+### 12.8 Performance Characteristics
+
+| Operation | Target | DuckDB vs SQLite |
+|-----------|--------|------------------|
+| CSV 10MB load | <500ms | 3-5x faster |
+| 100K row aggregation | <1s | 5-10x faster |
+| Parquet read | <100ms | 10-20x faster |
+| JOIN (CSV + SQLite) | <2s | Comparable |
+| Memory usage | <100MB | Similar |
+
+**Optimizations:**
+- **Zero-copy reads**: DuckDB reads files without staging
+- **Columnar storage**: Parquet optimized for analytics
+- **Parallel processing**: Multi-threaded execution
+- **Lazy evaluation**: Only read required data
+
+### 12.9 Security Considerations
+
+**File Path Validation:**
+```rust
+pub fn validate_file_path(path: &Path, allowed_dirs: &[PathBuf]) -> Result<()> {
+    let canonical = path.canonicalize()
+        .map_err(|_| anyhow!("Invalid path: {:?}", path))?;
+
+    if !allowed_dirs.iter().any(|dir| canonical.starts_with(dir)) {
+        return Err(anyhow!("Path not in allowed directories: {:?}", canonical));
+    }
+
+    Ok(())
+}
+```
+
+**Resource Limits:**
+- Max file size: 10GB (configurable)
+- Max result rows: 10,000 (configurable)
+- Query timeout: 30s (configurable)
+- Memory limit: 2GB (configurable)
+
+### 12.10 Implementation Timeline
+
+**Duration:** 2 weeks
+**Target:** 2026-03-01
+**Version:** v2.0.0
+
+| Week | Phase | Deliverables |
+|------|-------|--------------|
+| **1** | Core Integration | - `noctra-duckdb` crate<br>- `QueryEngine` enum<br>- DuckDB `DataSource` impl<br>- File registration (`USE 'file'`)<br>- Parser extensions (EXPORT, MAP, FILTER) |
+| **2** | Features & UI | - EXPORT multi-format<br>- TUI status bar updates<br>- CLI `--engine` flag<br>- Configuration system<br>- Ad hoc mode<br>- Documentation |
+
+### 12.11 Success Criteria
+
+**Functional:**
+- ✅ Load CSV/JSON/Parquet with `USE 'file.ext' AS alias`
+- ✅ Direct queries: `SELECT * FROM 'data.csv'`
+- ✅ Cross-source JOINs (CSV + SQLite)
+- ✅ EXPORT to multiple formats
+- ✅ MAP/FILTER transformations
+- ✅ Ad hoc mode (no database)
+
+**Performance:**
+- ✅ CSV 10MB: <500ms
+- ✅ 100K aggregation: <1s
+- ✅ Parquet 10x faster than CSV
+- ✅ Memory: <100MB (typical)
+
+**Quality:**
+- ✅ Test coverage: >90%
+- ✅ Zero clippy warnings
+- ✅ Complete documentation
+- ✅ Migration guide from v1.0
+
+### 12.12 Migration Path from v1.0
+
+**Backward Compatibility:**
+- All v1.0 SQLite workflows unchanged
+- Hybrid mode default (SQLite + DuckDB)
+- New `--engine` flag optional
+- Configuration file optional
+
+**Recommended Migration:**
+```bash
+# Before (v1.0): SQLite only
+noctra --db warehouse.db
+
+# After (v2.0): Hybrid mode (auto-enabled)
+noctra --db warehouse.db  # Same command, now supports files too!
+
+# Query CSV without import
+USE 'new_data.csv' AS csv;
+SELECT * FROM csv;
+
+# JOIN with existing SQLite tables
+SELECT c.*, o.total
+FROM csv.customers c
+JOIN warehouse.orders o ON c.id = o.customer_id;
+```
+
+**No Breaking Changes:** All existing functionality preserved.
+
+---
+
 ## Appendix A: API Reference
 
 Complete API documentation is available at `docs/API-REFERENCE.md`.
@@ -1941,7 +2481,7 @@ Contribution guidelines are available in `CONTRIBUTING.md`.
 
 ---
 
-**Document Version:** 1.0
-**Last Updated:** 2025-01-05
-**Status:** Complete
+**Document Version:** 1.2
+**Last Updated:** 2025-11-09
+**Status:** Complete (M3.5), Planning (M4, M6)
 **Authors:** Noctra Development Team

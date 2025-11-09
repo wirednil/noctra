@@ -16,13 +16,15 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame, Terminal,
 };
+use std::collections::HashMap;
 use std::io::{stdout, Stdout};
-use std::sync::Arc;
 use std::time::Duration;
 use tui_textarea::{Input, TextArea};
 
 // Backend integration
-use noctra_core::{Executor, ResultSet, Session};
+use noctra_core::{Executor, ResultSet, Session, RqlQuery, NoctraError};
+use noctra_core::{CsvDataSource, CsvOptions};
+use noctra_parser::{RqlProcessor, RqlStatement};
 
 use crate::nwm::UiMode;
 
@@ -32,7 +34,7 @@ pub struct NoctraTui<'a> {
     terminal: Terminal<CrosstermBackend<Stdout>>,
 
     /// Backend executor para ejecutar SQL
-    executor: Arc<Executor>,
+    executor: Executor,
 
     /// Sesión de usuario con variables y estado
     session: Session,
@@ -85,17 +87,17 @@ impl<'a> NoctraTui<'a> {
     /// Crear nueva instancia del TUI con base de datos en memoria
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let executor = Executor::new_sqlite_memory()?;
-        Self::with_executor(Arc::new(executor))
+        Self::with_executor(executor)
     }
 
     /// Crear TUI con base de datos desde archivo
     pub fn with_database<P: AsRef<str>>(db_path: P) -> Result<Self, Box<dyn std::error::Error>> {
         let executor = Executor::new_sqlite_file(db_path.as_ref())?;
-        Self::with_executor(Arc::new(executor))
+        Self::with_executor(executor)
     }
 
     /// Crear TUI con executor personalizado
-    fn with_executor(executor: Arc<Executor>) -> Result<Self, Box<dyn std::error::Error>> {
+    fn with_executor(executor: Executor) -> Result<Self, Box<dyn std::error::Error>> {
         // Configurar terminal
         enable_raw_mode()?;
         let mut stdout = stdout();
@@ -145,10 +147,22 @@ impl<'a> NoctraTui<'a> {
             let dialog_options = self.dialog_options.clone();
             let dialog_selected = self.dialog_selected;
 
-            // Obtener fuente activa
+            // Obtener fuente activa y tabla actual
             let active_source = self.executor.source_registry()
                 .active()
-                .map(|source| source.name().to_string());
+                .map(|source| {
+                    let source_name = source.name().to_string();
+
+                    // Intentar extraer nombre de tabla del último resultado
+                    if let Some(results) = &current_results {
+                        // Extraer tabla del comando SQL (ej: "SELECT * FROM clientes")
+                        if let Some(table) = Self::extract_table_name(&results.status) {
+                            return format!("{}:{}", source_name, table);
+                        }
+                    }
+
+                    source_name
+                });
 
             self.terminal.draw(|frame| {
                 Self::render_frame(
@@ -641,18 +655,60 @@ impl<'a> NoctraTui<'a> {
         self.command_history.push(command_text.clone());
         self.command_number += 1;
 
-        // ✨ EJECUTAR SQL REAL
-        match self.executor.execute_sql(&self.session, &command_text) {
-            Ok(result_set) => {
-                // Convertir ResultSet a QueryResults
-                self.current_results = Some(self.convert_result_set(result_set, &command_text));
+        // Parsear con RqlProcessor
+        // Ejecutar en un thread separado para evitar conflictos con runtime de Tokio
+        let cmd = command_text.clone();
+        let result = std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let processor = RqlProcessor::new();
+            rt.block_on(async {
+                processor.process(&cmd).await
+            })
+        }).join();
 
-                // Cambiar a modo Result
-                self.mode = UiMode::Result;
+        let ast = match result {
+            Ok(r) => r,
+            Err(_) => return Err("Thread panic during parsing".into()),
+        };
+
+        match ast {
+            Ok(ast) => {
+                // Procesar cada statement
+                for statement in &ast.statements {
+                    match statement {
+                        RqlStatement::Sql { sql, .. } => {
+                            // Ejecutar SQL normal con execute_rql (usa fuente activa si existe)
+                            self.execute_sql_statement(sql)?;
+                        }
+                        RqlStatement::UseSource { path, alias, options } => {
+                            self.handle_use_source(path, alias.as_deref(), options)?;
+                        }
+                        RqlStatement::ShowSources => {
+                            self.handle_show_sources()?;
+                        }
+                        RqlStatement::ShowTables { source } => {
+                            self.handle_show_tables(source.as_deref())?;
+                        }
+                        RqlStatement::ShowVars => {
+                            self.handle_show_vars()?;
+                        }
+                        RqlStatement::Describe { source, table } => {
+                            self.handle_describe(source.as_deref(), table)?;
+                        }
+                        RqlStatement::Let { variable, expression } => {
+                            self.handle_let(variable, expression)?;
+                        }
+                        RqlStatement::Unset { variables } => {
+                            self.handle_unset(variables)?;
+                        }
+                        _ => {
+                            self.show_error_dialog(&format!("⚠️ Comando no implementado: {:?}", statement.statement_type()));
+                        }
+                    }
+                }
             }
             Err(e) => {
-                // Mostrar error en Dialog Mode
-                self.show_error_dialog(&format!("❌ Error SQL: {}", e));
+                self.show_error_dialog(&format!("❌ Error de parseo: {}", e));
             }
         }
 
@@ -660,6 +716,308 @@ impl<'a> NoctraTui<'a> {
         self.clear_command_editor();
 
         Ok(())
+    }
+
+    /// Ejecutar statement SQL directo
+    fn execute_sql_statement(&mut self, sql: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let params = HashMap::new();
+        let rql_query = RqlQuery::new(sql, params);
+
+        match self.executor.execute_rql(&self.session, rql_query) {
+            Ok(result_set) => {
+                // Convertir ResultSet a QueryResults
+                self.current_results = Some(self.convert_result_set(result_set, sql));
+
+                // Cambiar a modo Result
+                self.mode = UiMode::Result;
+                Ok(())
+            }
+            Err(e) => {
+                // Mostrar error en Dialog Mode
+                self.show_error_dialog(&format!("❌ Error de ejecución SQL: {}", e));
+                Err(Box::new(e))
+            }
+        }
+    }
+
+    /// Manejar comando USE SOURCE
+    fn handle_use_source(&mut self, path: &str, alias: Option<&str>, _options: &HashMap<String, String>) -> Result<(), Box<dyn std::error::Error>> {
+        // Detectar tipo de fuente por extensión
+        if path.ends_with(".csv") {
+            // Crear fuente CSV
+            let source_name = alias.unwrap_or(path);
+            eprintln!("[DEBUG TUI] Loading CSV source: {} as {}", path, source_name);
+
+            let csv_source = CsvDataSource::new(
+                path,
+                source_name.to_string(),
+                CsvOptions::default()
+            ).map_err(|e| NoctraError::Internal(format!("Error loading CSV: {}", e)))?;
+
+            eprintln!("[DEBUG TUI] CSV source created successfully");
+
+            // Registrar fuente
+            self.executor.source_registry_mut()
+                .register(source_name.to_string(), Box::new(csv_source))
+                .map_err(|e| NoctraError::Internal(format!("Error registering source: {}", e)))?;
+
+            eprintln!("[DEBUG TUI] CSV source registered");
+            eprintln!("[DEBUG TUI] Active source: {:?}",
+                self.executor.source_registry().active().map(|s| s.name()));
+
+            self.show_info_dialog(&format!("✅ Fuente CSV '{}' cargada como '{}'", path, source_name));
+        } else {
+            self.show_error_dialog(&format!("❌ Tipo de fuente no soportado: {}\n(Solo .csv por ahora)", path));
+        }
+
+        Ok(())
+    }
+
+    /// Mostrar diálogo informativo
+    fn show_info_dialog(&mut self, message: &str) {
+        self.dialog_message = Some(message.to_string());
+        self.dialog_options = vec!["OK".to_string()];
+        self.dialog_selected = 0;
+        self.mode = UiMode::Dialog;
+    }
+
+    /// Manejar comando SHOW SOURCES
+    fn handle_show_sources(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        use noctra_core::types::{Column, Row, Value};
+
+        let sources = self.executor.source_registry().list_sources();
+
+        // Crear columnas
+        let columns = vec![
+            Column { name: "Alias".to_string(), data_type: "TEXT".to_string(), ordinal: 0 },
+            Column { name: "Tipo".to_string(), data_type: "TEXT".to_string(), ordinal: 1 },
+            Column { name: "Path".to_string(), data_type: "TEXT".to_string(), ordinal: 2 },
+        ];
+
+        // Crear filas
+        let rows: Vec<Row> = sources.iter().map(|(alias, source_type)| {
+            Row {
+                values: vec![
+                    Value::Text(alias.clone()),
+                    Value::Text(source_type.type_name().to_string()),
+                    Value::Text(source_type.display_path().to_string()),
+                ]
+            }
+        }).collect();
+
+        let result_set = ResultSet {
+            columns,
+            rows,
+            rows_affected: None,
+            last_insert_rowid: None,
+        };
+
+        // Mostrar como resultado de tabla
+        self.current_results = Some(self.convert_result_set(result_set, "SHOW SOURCES"));
+        self.mode = UiMode::Result;
+
+        Ok(())
+    }
+
+    /// Manejar comando SHOW TABLES
+    fn handle_show_tables(&mut self, source: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        use noctra_core::types::{Column, Row, Value};
+
+        let mut table_list = Vec::new();
+
+        if let Some(source_name) = source {
+            // Mostrar tablas de una fuente específica
+            if let Some(data_source) = self.executor.source_registry().get(source_name) {
+                match data_source.schema() {
+                    Ok(tables) => {
+                        for table in tables {
+                            table_list.push(table.name);
+                        }
+                    }
+                    Err(e) => {
+                        return Err(Box::new(NoctraError::Internal(format!("Error obteniendo schema: {}", e))));
+                    }
+                }
+            } else {
+                return Err(Box::new(NoctraError::Internal(format!("Fuente '{}' no encontrada", source_name))));
+            }
+        } else {
+            // Mostrar todas las tablas de todas las fuentes
+            let sources = self.executor.source_registry().list_sources();
+            for (alias, _) in sources {
+                if let Some(data_source) = self.executor.source_registry().get(&alias) {
+                    if let Ok(tables) = data_source.schema() {
+                        for table in tables {
+                            table_list.push(table.name);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Crear columnas
+        let columns = vec![
+            Column { name: "table".to_string(), data_type: "TEXT".to_string(), ordinal: 0 },
+        ];
+
+        // Crear filas
+        let rows: Vec<Row> = table_list.iter().map(|table_name| {
+            Row {
+                values: vec![Value::Text(table_name.clone())]
+            }
+        }).collect();
+
+        let result_set = ResultSet {
+            columns,
+            rows,
+            rows_affected: None,
+            last_insert_rowid: None,
+        };
+
+        // Mostrar como resultado de tabla
+        self.current_results = Some(self.convert_result_set(result_set, "SHOW TABLES"));
+        self.mode = UiMode::Result;
+
+        Ok(())
+    }
+
+    /// Manejar comando SHOW VARS
+    fn handle_show_vars(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        use noctra_core::types::{Column, Row, Value};
+
+        let vars = self.session.list_variables();
+
+        // Crear columnas
+        let columns = vec![
+            Column { name: "Variable".to_string(), data_type: "TEXT".to_string(), ordinal: 0 },
+            Column { name: "Valor".to_string(), data_type: "TEXT".to_string(), ordinal: 1 },
+        ];
+
+        // Crear filas
+        let rows: Vec<Row> = vars.iter().map(|(name, value)| {
+            Row {
+                values: vec![
+                    Value::Text(name.clone()),
+                    Value::Text(value.to_string()),
+                ]
+            }
+        }).collect();
+
+        let result_set = ResultSet {
+            columns,
+            rows,
+            rows_affected: None,
+            last_insert_rowid: None,
+        };
+
+        // Mostrar como resultado de tabla
+        self.current_results = Some(self.convert_result_set(result_set, "SHOW VARS"));
+        self.mode = UiMode::Result;
+
+        Ok(())
+    }
+
+    /// Manejar comando DESCRIBE
+    fn handle_describe(&mut self, source: Option<&str>, table: &str) -> Result<(), Box<dyn std::error::Error>> {
+        use noctra_core::types::{Column, Row, Value};
+
+        if let Some(source_name) = source {
+            // Describir tabla de una fuente específica
+            if let Some(data_source) = self.executor.source_registry().get(source_name) {
+                match data_source.schema() {
+                    Ok(tables) => {
+                        if let Some(table_info) = tables.iter().find(|t| t.name == table) {
+                            // Crear columnas
+                            let columns = vec![
+                                Column { name: "Campos".to_string(), data_type: "TEXT".to_string(), ordinal: 0 },
+                                Column { name: "Tipo".to_string(), data_type: "TEXT".to_string(), ordinal: 1 },
+                            ];
+
+                            // Crear filas
+                            let rows: Vec<Row> = table_info.columns.iter().map(|col| {
+                                Row {
+                                    values: vec![
+                                        Value::Text(col.name.clone()),
+                                        Value::Text(col.data_type.clone()),
+                                    ]
+                                }
+                            }).collect();
+
+                            let result_set = ResultSet {
+                                columns,
+                                rows,
+                                rows_affected: None,
+                                last_insert_rowid: None,
+                            };
+
+                            // Mostrar como resultado de tabla
+                            self.current_results = Some(self.convert_result_set(result_set, &format!("DESCRIBE {}.{}", source_name, table)));
+                            self.mode = UiMode::Result;
+
+                            return Ok(());
+                        } else {
+                            return Err(Box::new(NoctraError::Internal(format!("Tabla '{}' no encontrada en '{}'", table, source_name))));
+                        }
+                    }
+                    Err(e) => {
+                        return Err(Box::new(NoctraError::Internal(format!("Error obteniendo schema: {}", e))));
+                    }
+                }
+            } else {
+                return Err(Box::new(NoctraError::Internal(format!("Fuente '{}' no encontrada", source_name))));
+            }
+        } else {
+            return Err(Box::new(NoctraError::Internal("DESCRIBE requiere especificar la fuente: DESCRIBE source.table".to_string())));
+        }
+    }
+
+    /// Manejar comando LET
+    fn handle_let(&mut self, variable: &str, expression: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Evaluar la expresión (por ahora, simplemente tomar el valor literal)
+        let value = expression.trim_matches('\'').trim_matches('"');
+        self.session.set_variable(variable.to_string(), value.to_string());
+
+        self.show_info_dialog(&format!("✅ Variable '{}' = '{}'", variable, value));
+        Ok(())
+    }
+
+    /// Manejar comando UNSET
+    fn handle_unset(&mut self, variables: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+        let mut message = String::from("✅ Variables eliminadas:\n\n");
+        for var in variables {
+            self.session.remove_variable(var);
+            message.push_str(&format!("  • {}\n", var));
+        }
+
+        self.show_info_dialog(&message);
+        Ok(())
+    }
+
+    /// Extraer nombre de tabla de un comando SQL
+    fn extract_table_name(sql: &str) -> Option<String> {
+        let sql_upper = sql.to_uppercase();
+
+        // Intentar extraer de "SELECT * FROM tabla"
+        if let Some(pos) = sql_upper.find(" FROM ") {
+            let after_from = &sql[pos + 6..];
+            let table_name = after_from
+                .split_whitespace()
+                .next()?
+                .trim_end_matches(';')
+                .trim();
+            return Some(table_name.to_string());
+        }
+
+        // Intentar extraer de "DESCRIBE source.tabla"
+        if sql_upper.starts_with("DESCRIBE ") {
+            let after_describe = &sql[9..];
+            let parts: Vec<&str> = after_describe.split('.').collect();
+            if parts.len() == 2 {
+                return Some(parts[1].trim_end_matches(';').trim().to_string());
+            }
+        }
+
+        None
     }
 
     /// Limpiar el editor de comandos

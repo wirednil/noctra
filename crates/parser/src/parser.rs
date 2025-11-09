@@ -583,6 +583,7 @@ impl RqlParser {
 
     /// Parsear sección OPTIONS
     /// Sintaxis: OPTIONS (key1=value1, key2=value2, ...)
+    /// Soporta valores entre comillas: OPTIONS (delimiter=',', header=true)
     fn parse_options(&self, line: &str, line_num: usize) -> ParserResult<HashMap<String, String>> {
         let mut options = HashMap::new();
 
@@ -590,15 +591,26 @@ impl RqlParser {
             let after_options = &line[options_start + 10..]; // 10 = len(" OPTIONS (")
             if let Some(options_end) = after_options.find(')') {
                 let options_str = &after_options[..options_end];
-                for opt_pair in options_str.split(',') {
+
+                // Parsear key=value pairs considerando comillas
+                let pairs = self.split_options(options_str);
+
+                for opt_pair in pairs {
                     let trimmed = opt_pair.trim();
-                    // Skip empty parts (can happen with trailing commas or comma values)
+                    // Skip empty parts
                     if trimmed.is_empty() {
                         continue;
                     }
                     if let Some(eq_pos) = trimmed.find('=') {
                         let key = trimmed[..eq_pos].trim().to_string();
-                        let value = trimmed[eq_pos + 1..].trim().to_string();
+                        let mut value = trimmed[eq_pos + 1..].trim().to_string();
+
+                        // Remover comillas si existen
+                        if (value.starts_with('\'') && value.ends_with('\'')) ||
+                           (value.starts_with('"') && value.ends_with('"')) {
+                            value = value[1..value.len()-1].to_string();
+                        }
+
                         options.insert(key, value);
                     } else {
                         return Err(ParserError::syntax_error(
@@ -618,6 +630,44 @@ impl RqlParser {
         }
 
         Ok(options)
+    }
+
+    /// Dividir string de opciones respetando comillas
+    fn split_options(&self, options_str: &str) -> Vec<String> {
+        let mut parts = Vec::new();
+        let mut current = String::new();
+        let mut in_quotes = false;
+        let mut quote_char = ' ';
+
+        for ch in options_str.chars() {
+            match ch {
+                '\'' | '"' if !in_quotes => {
+                    in_quotes = true;
+                    quote_char = ch;
+                    current.push(ch);
+                }
+                c if in_quotes && c == quote_char => {
+                    in_quotes = false;
+                    current.push(ch);
+                }
+                ',' if !in_quotes => {
+                    if !current.trim().is_empty() {
+                        parts.push(current.trim().to_string());
+                    }
+                    current.clear();
+                }
+                _ => {
+                    current.push(ch);
+                }
+            }
+        }
+
+        // No olvidar la última parte
+        if !current.trim().is_empty() {
+            parts.push(current.trim().to_string());
+        }
+
+        parts
     }
 
     /// Parsear statement SQL

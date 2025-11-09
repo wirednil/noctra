@@ -56,9 +56,6 @@ pub struct Repl {
     /// Executor de queries
     executor: Executor,
 
-    /// Processor RQL
-    processor: RqlProcessor,
-
     /// Sesión actual
     session: Session,
 }
@@ -72,9 +69,6 @@ impl Repl {
         let backend = SqliteBackend::with_file(&config.database.connection_string)?;
         let executor = Executor::new(Arc::new(backend));
 
-        // Crear processor RQL
-        let processor = RqlProcessor::new();
-
         // Crear sesión
         let session = Session::new();
 
@@ -82,7 +76,6 @@ impl Repl {
             config,
             handler,
             executor,
-            processor,
             session,
         })
     }
@@ -189,13 +182,21 @@ impl Repl {
 
     /// Ejecutar query SQL/RQL
     fn execute_query(&mut self, query: &str) -> Result<bool> {
-        // Parsear query con RqlProcessor
-        let runtime = tokio::runtime::Runtime::new()
-            .map_err(|e| NoctraError::Internal(format!("Failed to create runtime: {}", e)))?;
+        // Parsear query con RqlProcessor en thread separado
+        // para evitar conflictos con runtime de Tokio existente
+        let query_str = query.to_string();
+        let result = std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let processor = RqlProcessor::new();
+            rt.block_on(async {
+                processor.process(&query_str).await
+            })
+        }).join();
 
-        let ast = runtime.block_on(async {
-            self.processor.process(query).await
-        }).map_err(|e| NoctraError::Internal(format!("Parse error: {}", e)))?;
+        let ast = match result {
+            Ok(r) => r,
+            Err(_) => return Err(NoctraError::Internal("Thread panic during parsing".to_string())),
+        }.map_err(|e| NoctraError::Internal(format!("Parse error: {}", e)))?;
 
         // Procesar cada statement
         for statement in &ast.statements {
@@ -281,16 +282,24 @@ impl Repl {
         if path.ends_with(".csv") {
             // Crear fuente CSV
             let source_name = alias.unwrap_or(path);
+            eprintln!("[DEBUG] Loading CSV source: {} as {}", path, source_name);
+
             let csv_source = CsvDataSource::new(
                 path,
                 source_name.to_string(),
                 CsvOptions::default()
             ).map_err(|e| NoctraError::Internal(format!("Error loading CSV: {}", e)))?;
 
+            eprintln!("[DEBUG] CSV source created successfully");
+
             // Registrar fuente
             self.executor.source_registry_mut()
                 .register(source_name.to_string(), Box::new(csv_source))
                 .map_err(|e| NoctraError::Internal(format!("Error registering source: {}", e)))?;
+
+            eprintln!("[DEBUG] CSV source registered");
+            eprintln!("[DEBUG] Active source after registration: {:?}",
+                self.executor.source_registry().active().map(|s| s.name()));
 
             println!("✅ Fuente CSV '{}' cargada como '{}'", path, source_name);
         } else {
