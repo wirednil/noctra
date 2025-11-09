@@ -147,10 +147,22 @@ impl<'a> NoctraTui<'a> {
             let dialog_options = self.dialog_options.clone();
             let dialog_selected = self.dialog_selected;
 
-            // Obtener fuente activa
+            // Obtener fuente activa y tabla actual
             let active_source = self.executor.source_registry()
                 .active()
-                .map(|source| source.name().to_string());
+                .map(|source| {
+                    let source_name = source.name().to_string();
+
+                    // Intentar extraer nombre de tabla del último resultado
+                    if let Some(results) = &current_results {
+                        // Extraer tabla del comando SQL (ej: "SELECT * FROM clientes")
+                        if let Some(table) = Self::extract_table_name(&results.status) {
+                            return format!("{}:{}", source_name, table);
+                        }
+                    }
+
+                    source_name
+                });
 
             self.terminal.draw(|frame| {
                 Self::render_frame(
@@ -771,92 +783,143 @@ impl<'a> NoctraTui<'a> {
 
     /// Manejar comando SHOW SOURCES
     fn handle_show_sources(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        use noctra_core::types::{Column, Row, Value};
+
         let sources = self.executor.source_registry().list_sources();
 
-        let mut message = String::from("📊 Fuentes disponibles:\n\n");
-        if sources.is_empty() {
-            message.push_str("ℹ️  No hay fuentes registradas");
-        } else {
-            for (alias, source_type) in sources {
-                message.push_str(&format!("  • {} ({}) - {}\n", alias, source_type.type_name(), source_type.display_path()));
-            }
-        }
+        // Crear columnas
+        let columns = vec![
+            Column { name: "Alias".to_string(), data_type: "TEXT".to_string(), ordinal: 0 },
+            Column { name: "Tipo".to_string(), data_type: "TEXT".to_string(), ordinal: 1 },
+            Column { name: "Path".to_string(), data_type: "TEXT".to_string(), ordinal: 2 },
+        ];
 
-        self.show_info_dialog(&message);
+        // Crear filas
+        let rows: Vec<Row> = sources.iter().map(|(alias, source_type)| {
+            Row {
+                values: vec![
+                    Value::Text(alias.clone()),
+                    Value::Text(source_type.type_name().to_string()),
+                    Value::Text(source_type.display_path().to_string()),
+                ]
+            }
+        }).collect();
+
+        let result_set = ResultSet {
+            columns,
+            rows,
+            rows_affected: None,
+            last_insert_rowid: None,
+        };
+
+        // Mostrar como resultado de tabla
+        self.current_results = Some(self.convert_result_set(result_set, "SHOW SOURCES"));
+        self.mode = UiMode::Result;
+
         Ok(())
     }
 
     /// Manejar comando SHOW TABLES
     fn handle_show_tables(&mut self, source: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-        let mut message = String::new();
+        use noctra_core::types::{Column, Row, Value};
+
+        let mut table_list = Vec::new();
 
         if let Some(source_name) = source {
             // Mostrar tablas de una fuente específica
             if let Some(data_source) = self.executor.source_registry().get(source_name) {
                 match data_source.schema() {
                     Ok(tables) => {
-                        if tables.is_empty() {
-                            message.push_str(&format!("ℹ️  No hay tablas en '{}'", source_name));
-                        } else {
-                            message.push_str(&format!("📋 Tablas en '{}':\n\n", source_name));
-                            for table in tables {
-                                message.push_str(&format!("  • {} ({} columnas)\n", table.name, table.columns.len()));
-                            }
+                        for table in tables {
+                            table_list.push(table.name);
                         }
                     }
                     Err(e) => {
-                        message.push_str(&format!("❌ Error obteniendo schema: {}", e));
+                        return Err(Box::new(NoctraError::Internal(format!("Error obteniendo schema: {}", e))));
                     }
                 }
             } else {
-                message.push_str(&format!("❌ Fuente '{}' no encontrada", source_name));
+                return Err(Box::new(NoctraError::Internal(format!("Fuente '{}' no encontrada", source_name))));
             }
         } else {
             // Mostrar todas las tablas de todas las fuentes
             let sources = self.executor.source_registry().list_sources();
-            if sources.is_empty() {
-                message.push_str("ℹ️  No hay fuentes registradas");
-            } else {
-                for (alias, _) in sources {
-                    if let Some(data_source) = self.executor.source_registry().get(&alias) {
-                        if let Ok(tables) = data_source.schema() {
-                            if !tables.is_empty() {
-                                message.push_str(&format!("📋 Tablas en '{}':\n", alias));
-                                for table in tables {
-                                    message.push_str(&format!("  • {} ({} columnas)\n", table.name, table.columns.len()));
-                                }
-                                message.push('\n');
-                            }
+            for (alias, _) in sources {
+                if let Some(data_source) = self.executor.source_registry().get(&alias) {
+                    if let Ok(tables) = data_source.schema() {
+                        for table in tables {
+                            table_list.push(table.name);
                         }
                     }
                 }
             }
         }
 
-        self.show_info_dialog(&message);
+        // Crear columnas
+        let columns = vec![
+            Column { name: "table".to_string(), data_type: "TEXT".to_string(), ordinal: 0 },
+        ];
+
+        // Crear filas
+        let rows: Vec<Row> = table_list.iter().map(|table_name| {
+            Row {
+                values: vec![Value::Text(table_name.clone())]
+            }
+        }).collect();
+
+        let result_set = ResultSet {
+            columns,
+            rows,
+            rows_affected: None,
+            last_insert_rowid: None,
+        };
+
+        // Mostrar como resultado de tabla
+        self.current_results = Some(self.convert_result_set(result_set, "SHOW TABLES"));
+        self.mode = UiMode::Result;
+
         Ok(())
     }
 
     /// Manejar comando SHOW VARS
     fn handle_show_vars(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        use noctra_core::types::{Column, Row, Value};
+
         let vars = self.session.list_variables();
 
-        let mut message = String::from("🔧 Variables de sesión:\n\n");
-        if vars.is_empty() {
-            message.push_str("ℹ️  No hay variables de sesión definidas");
-        } else {
-            for (name, value) in vars {
-                message.push_str(&format!("  {} = {}\n", name, value));
-            }
-        }
+        // Crear columnas
+        let columns = vec![
+            Column { name: "Variable".to_string(), data_type: "TEXT".to_string(), ordinal: 0 },
+            Column { name: "Valor".to_string(), data_type: "TEXT".to_string(), ordinal: 1 },
+        ];
 
-        self.show_info_dialog(&message);
+        // Crear filas
+        let rows: Vec<Row> = vars.iter().map(|(name, value)| {
+            Row {
+                values: vec![
+                    Value::Text(name.clone()),
+                    Value::Text(value.to_string()),
+                ]
+            }
+        }).collect();
+
+        let result_set = ResultSet {
+            columns,
+            rows,
+            rows_affected: None,
+            last_insert_rowid: None,
+        };
+
+        // Mostrar como resultado de tabla
+        self.current_results = Some(self.convert_result_set(result_set, "SHOW VARS"));
+        self.mode = UiMode::Result;
+
         Ok(())
     }
 
     /// Manejar comando DESCRIBE
     fn handle_describe(&mut self, source: Option<&str>, table: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let mut message = String::new();
+        use noctra_core::types::{Column, Row, Value};
 
         if let Some(source_name) = source {
             // Describir tabla de una fuente específica
@@ -864,31 +927,48 @@ impl<'a> NoctraTui<'a> {
                 match data_source.schema() {
                     Ok(tables) => {
                         if let Some(table_info) = tables.iter().find(|t| t.name == table) {
-                            message.push_str(&format!("📊 Estructura de {}.{}:\n\n", source_name, table));
-                            message.push_str("  Columnas:\n");
-                            for col in &table_info.columns {
-                                message.push_str(&format!("    • {} ({})\n", col.name, col.data_type));
-                            }
-                            if let Some(row_count) = table_info.row_count {
-                                message.push_str(&format!("\n  Filas: {}", row_count));
-                            }
+                            // Crear columnas
+                            let columns = vec![
+                                Column { name: "Campos".to_string(), data_type: "TEXT".to_string(), ordinal: 0 },
+                                Column { name: "Tipo".to_string(), data_type: "TEXT".to_string(), ordinal: 1 },
+                            ];
+
+                            // Crear filas
+                            let rows: Vec<Row> = table_info.columns.iter().map(|col| {
+                                Row {
+                                    values: vec![
+                                        Value::Text(col.name.clone()),
+                                        Value::Text(col.data_type.clone()),
+                                    ]
+                                }
+                            }).collect();
+
+                            let result_set = ResultSet {
+                                columns,
+                                rows,
+                                rows_affected: None,
+                                last_insert_rowid: None,
+                            };
+
+                            // Mostrar como resultado de tabla
+                            self.current_results = Some(self.convert_result_set(result_set, &format!("DESCRIBE {}.{}", source_name, table)));
+                            self.mode = UiMode::Result;
+
+                            return Ok(());
                         } else {
-                            message.push_str(&format!("❌ Tabla '{}' no encontrada en '{}'", table, source_name));
+                            return Err(Box::new(NoctraError::Internal(format!("Tabla '{}' no encontrada en '{}'", table, source_name))));
                         }
                     }
                     Err(e) => {
-                        message.push_str(&format!("❌ Error obteniendo schema: {}", e));
+                        return Err(Box::new(NoctraError::Internal(format!("Error obteniendo schema: {}", e))));
                     }
                 }
             } else {
-                message.push_str(&format!("❌ Fuente '{}' no encontrada", source_name));
+                return Err(Box::new(NoctraError::Internal(format!("Fuente '{}' no encontrada", source_name))));
             }
         } else {
-            message.push_str("❌ DESCRIBE requiere especificar la fuente: DESCRIBE source.table");
+            return Err(Box::new(NoctraError::Internal("DESCRIBE requiere especificar la fuente: DESCRIBE source.table".to_string())));
         }
-
-        self.show_info_dialog(&message);
-        Ok(())
     }
 
     /// Manejar comando LET
@@ -911,6 +991,33 @@ impl<'a> NoctraTui<'a> {
 
         self.show_info_dialog(&message);
         Ok(())
+    }
+
+    /// Extraer nombre de tabla de un comando SQL
+    fn extract_table_name(sql: &str) -> Option<String> {
+        let sql_upper = sql.to_uppercase();
+
+        // Intentar extraer de "SELECT * FROM tabla"
+        if let Some(pos) = sql_upper.find(" FROM ") {
+            let after_from = &sql[pos + 6..];
+            let table_name = after_from
+                .split_whitespace()
+                .next()?
+                .trim_end_matches(';')
+                .trim();
+            return Some(table_name.to_string());
+        }
+
+        // Intentar extraer de "DESCRIBE source.tabla"
+        if sql_upper.starts_with("DESCRIBE ") {
+            let after_describe = &sql[9..];
+            let parts: Vec<&str> = after_describe.split('.').collect();
+            if parts.len() == 2 {
+                return Some(parts[1].trim_end_matches(';').trim().to_string());
+            }
+        }
+
+        None
     }
 
     /// Limpiar el editor de comandos
