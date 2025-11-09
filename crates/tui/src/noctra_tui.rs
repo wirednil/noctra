@@ -16,13 +16,15 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame, Terminal,
 };
+use std::collections::HashMap;
 use std::io::{stdout, Stdout};
-use std::sync::Arc;
 use std::time::Duration;
 use tui_textarea::{Input, TextArea};
 
 // Backend integration
-use noctra_core::{Executor, ResultSet, Session};
+use noctra_core::{Executor, ResultSet, Session, RqlQuery, NoctraError};
+use noctra_core::{CsvDataSource, CsvOptions};
+use noctra_parser::{RqlProcessor, RqlStatement};
 
 use crate::nwm::UiMode;
 
@@ -32,7 +34,10 @@ pub struct NoctraTui<'a> {
     terminal: Terminal<CrosstermBackend<Stdout>>,
 
     /// Backend executor para ejecutar SQL
-    executor: Arc<Executor>,
+    executor: Executor,
+
+    /// RQL Processor para parsear comandos
+    processor: RqlProcessor,
 
     /// Sesión de usuario con variables y estado
     session: Session,
@@ -85,17 +90,17 @@ impl<'a> NoctraTui<'a> {
     /// Crear nueva instancia del TUI con base de datos en memoria
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let executor = Executor::new_sqlite_memory()?;
-        Self::with_executor(Arc::new(executor))
+        Self::with_executor(executor)
     }
 
     /// Crear TUI con base de datos desde archivo
     pub fn with_database<P: AsRef<str>>(db_path: P) -> Result<Self, Box<dyn std::error::Error>> {
         let executor = Executor::new_sqlite_file(db_path.as_ref())?;
-        Self::with_executor(Arc::new(executor))
+        Self::with_executor(executor)
     }
 
     /// Crear TUI con executor personalizado
-    fn with_executor(executor: Arc<Executor>) -> Result<Self, Box<dyn std::error::Error>> {
+    fn with_executor(executor: Executor) -> Result<Self, Box<dyn std::error::Error>> {
         // Configurar terminal
         enable_raw_mode()?;
         let mut stdout = stdout();
@@ -117,9 +122,13 @@ impl<'a> NoctraTui<'a> {
         // Crear sesión
         let session = Session::new();
 
+        // Crear processor RQL
+        let processor = RqlProcessor::new();
+
         Ok(Self {
             terminal,
             executor,
+            processor,
             session,
             mode: UiMode::Command,
             command_editor,
@@ -641,18 +650,32 @@ impl<'a> NoctraTui<'a> {
         self.command_history.push(command_text.clone());
         self.command_number += 1;
 
-        // ✨ EJECUTAR SQL REAL
-        match self.executor.execute_sql(&self.session, &command_text) {
-            Ok(result_set) => {
-                // Convertir ResultSet a QueryResults
-                self.current_results = Some(self.convert_result_set(result_set, &command_text));
+        // Parsear con RqlProcessor
+        let runtime = tokio::runtime::Runtime::new()?;
+        let ast = runtime.block_on(async {
+            self.processor.process(&command_text).await
+        });
 
-                // Cambiar a modo Result
-                self.mode = UiMode::Result;
+        match ast {
+            Ok(ast) => {
+                // Procesar cada statement
+                for statement in &ast.statements {
+                    match statement {
+                        RqlStatement::Sql { sql, .. } => {
+                            // Ejecutar SQL normal con execute_rql (usa fuente activa si existe)
+                            self.execute_sql_statement(sql)?;
+                        }
+                        RqlStatement::UseSource { path, alias, options } => {
+                            self.handle_use_source(path, alias.as_deref(), options)?;
+                        }
+                        _ => {
+                            self.show_error_dialog("⚠️ Comando no soportado en TUI todavía");
+                        }
+                    }
+                }
             }
             Err(e) => {
-                // Mostrar error en Dialog Mode
-                self.show_error_dialog(&format!("❌ Error SQL: {}", e));
+                self.show_error_dialog(&format!("❌ Error de parseo: {}", e));
             }
         }
 
@@ -660,6 +683,69 @@ impl<'a> NoctraTui<'a> {
         self.clear_command_editor();
 
         Ok(())
+    }
+
+    /// Ejecutar statement SQL directo
+    fn execute_sql_statement(&mut self, sql: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let params = HashMap::new();
+        let rql_query = RqlQuery::new(sql, params);
+
+        match self.executor.execute_rql(&self.session, rql_query) {
+            Ok(result_set) => {
+                // Convertir ResultSet a QueryResults
+                self.current_results = Some(self.convert_result_set(result_set, sql));
+
+                // Cambiar a modo Result
+                self.mode = UiMode::Result;
+                Ok(())
+            }
+            Err(e) => {
+                // Mostrar error en Dialog Mode
+                self.show_error_dialog(&format!("❌ Error de ejecución SQL: {}", e));
+                Err(Box::new(e))
+            }
+        }
+    }
+
+    /// Manejar comando USE SOURCE
+    fn handle_use_source(&mut self, path: &str, alias: Option<&str>, _options: &HashMap<String, String>) -> Result<(), Box<dyn std::error::Error>> {
+        // Detectar tipo de fuente por extensión
+        if path.ends_with(".csv") {
+            // Crear fuente CSV
+            let source_name = alias.unwrap_or(path);
+            eprintln!("[DEBUG TUI] Loading CSV source: {} as {}", path, source_name);
+
+            let csv_source = CsvDataSource::new(
+                path,
+                source_name.to_string(),
+                CsvOptions::default()
+            ).map_err(|e| NoctraError::Internal(format!("Error loading CSV: {}", e)))?;
+
+            eprintln!("[DEBUG TUI] CSV source created successfully");
+
+            // Registrar fuente
+            self.executor.source_registry_mut()
+                .register(source_name.to_string(), Box::new(csv_source))
+                .map_err(|e| NoctraError::Internal(format!("Error registering source: {}", e)))?;
+
+            eprintln!("[DEBUG TUI] CSV source registered");
+            eprintln!("[DEBUG TUI] Active source: {:?}",
+                self.executor.source_registry().active().map(|s| s.name()));
+
+            self.show_info_dialog(&format!("✅ Fuente CSV '{}' cargada como '{}'", path, source_name));
+        } else {
+            self.show_error_dialog(&format!("❌ Tipo de fuente no soportado: {}\n(Solo .csv por ahora)", path));
+        }
+
+        Ok(())
+    }
+
+    /// Mostrar diálogo informativo
+    fn show_info_dialog(&mut self, message: &str) {
+        self.dialog_message = Some(message.to_string());
+        self.dialog_options = vec!["OK".to_string()];
+        self.dialog_selected = 0;
+        self.mode = UiMode::Dialog;
     }
 
     /// Limpiar el editor de comandos

@@ -300,11 +300,17 @@ impl CsvDataSource {
 
 impl DataSource for CsvDataSource {
     fn query(&self, sql: &str, _parameters: &Parameters) -> Result<ResultSet> {
+        eprintln!("[DEBUG CSV] Query received: {}", sql);
+        eprintln!("[DEBUG CSV] Table name: {}", self.table_name());
+        eprintln!("[DEBUG CSV] Schema: {} columns", self.schema.len());
+
         // For MVP, we'll do simple filtering in memory
         // Full SQL support would require embedding SQLite or similar
 
         // For now, just return all data if it's a SELECT *
         if sql.trim().to_uppercase().starts_with("SELECT * FROM") {
+            eprintln!("[DEBUG CSV] Returning all {} rows", self.data.len());
+
             let columns: Vec<Column> = self.schema
                 .iter()
                 .enumerate()
@@ -329,6 +335,7 @@ impl DataSource for CsvDataSource {
                 last_insert_rowid: None,
             })
         } else {
+            eprintln!("[DEBUG CSV] Query not supported: {}", sql);
             Err(NoctraError::Internal(
                 "CSV source only supports 'SELECT * FROM <table>' queries for now".to_string()
             ))

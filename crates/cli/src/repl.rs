@@ -281,16 +281,24 @@ impl Repl {
         if path.ends_with(".csv") {
             // Crear fuente CSV
             let source_name = alias.unwrap_or(path);
+            eprintln!("[DEBUG] Loading CSV source: {} as {}", path, source_name);
+
             let csv_source = CsvDataSource::new(
                 path,
                 source_name.to_string(),
                 CsvOptions::default()
             ).map_err(|e| NoctraError::Internal(format!("Error loading CSV: {}", e)))?;
 
+            eprintln!("[DEBUG] CSV source created successfully");
+
             // Registrar fuente
             self.executor.source_registry_mut()
                 .register(source_name.to_string(), Box::new(csv_source))
                 .map_err(|e| NoctraError::Internal(format!("Error registering source: {}", e)))?;
+
+            eprintln!("[DEBUG] CSV source registered");
+            eprintln!("[DEBUG] Active source after registration: {:?}",
+                self.executor.source_registry().active().map(|s| s.name()));
 
             println!("✅ Fuente CSV '{}' cargada como '{}'", path, source_name);
         } else {
