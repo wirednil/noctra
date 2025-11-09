@@ -4,7 +4,8 @@ use crate::cli::ReplArgs;
 use crate::config::CliConfig;
 use crate::output::format_result_set;
 use noctra_core::{Executor, NoctraError, RqlQuery, Session, SqliteBackend};
-use noctra_parser::RqlParser;
+use noctra_core::{CsvDataSource, CsvOptions};
+use noctra_parser::{RqlProcessor, RqlStatement};
 use std::collections::HashMap;
 use std::io::{self, Write};
 use std::sync::Arc;
@@ -55,8 +56,8 @@ pub struct Repl {
     /// Executor de queries
     executor: Executor,
 
-    /// Parser RQL
-    _parser: RqlParser,
+    /// Processor RQL
+    processor: RqlProcessor,
 
     /// Sesión actual
     session: Session,
@@ -71,8 +72,8 @@ impl Repl {
         let backend = SqliteBackend::with_file(&config.database.connection_string)?;
         let executor = Executor::new(Arc::new(backend));
 
-        // Crear parser
-        let _parser = RqlParser::new();
+        // Crear processor RQL
+        let processor = RqlProcessor::new();
 
         // Crear sesión
         let session = Session::new();
@@ -81,7 +82,7 @@ impl Repl {
             config,
             handler,
             executor,
-            _parser,
+            processor,
             session,
         })
     }
@@ -188,16 +189,61 @@ impl Repl {
 
     /// Ejecutar query SQL/RQL
     fn execute_query(&mut self, query: &str) -> Result<bool> {
-        // Parsear query
-        let sql = match self.parse_query(query) {
-            Ok(s) => s,
-            Err(e) => {
-                println!("❌ Error de sintaxis: {}", e);
-                return Ok(false);
-            }
-        };
+        // Parsear query con RqlProcessor
+        let runtime = tokio::runtime::Runtime::new()
+            .map_err(|e| NoctraError::Internal(format!("Failed to create runtime: {}", e)))?;
 
-        // Ejecutar query
+        let ast = runtime.block_on(async {
+            self.processor.process(query).await
+        }).map_err(|e| NoctraError::Internal(format!("Parse error: {}", e)))?;
+
+        // Procesar cada statement
+        for statement in &ast.statements {
+            match statement {
+                RqlStatement::Sql { sql, .. } => {
+                    // Ejecutar SQL normal
+                    self.execute_sql_statement(sql)?;
+                }
+
+                RqlStatement::UseSource { path, alias, options } => {
+                    self.handle_use_source(path, alias.as_deref(), options)?;
+                }
+
+                RqlStatement::ShowSources => {
+                    self.handle_show_sources()?;
+                }
+
+                RqlStatement::ShowTables { source } => {
+                    self.handle_show_tables(source.as_deref())?;
+                }
+
+                RqlStatement::ShowVars => {
+                    self.handle_show_vars()?;
+                }
+
+                RqlStatement::Describe { source, table } => {
+                    self.handle_describe(source.as_deref(), table)?;
+                }
+
+                RqlStatement::Let { variable, expression } => {
+                    self.handle_let(variable, expression)?;
+                }
+
+                RqlStatement::Unset { variables } => {
+                    self.handle_unset(variables)?;
+                }
+
+                _ => {
+                    println!("⚠️  Comando no implementado aún en REPL: {:?}", statement.statement_type());
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
+    /// Ejecutar statement SQL directo
+    fn execute_sql_statement(&mut self, sql: &str) -> Result<()> {
         let params = HashMap::new();
         let rql_query = RqlQuery::new(sql, params);
 
@@ -220,20 +266,166 @@ impl Repl {
                     println!();
                     println!("({} filas)", result_set.rows.len());
                 }
-                Ok(false)
+                Ok(())
             }
             Err(e) => {
                 println!("❌ Error de ejecución: {}", e);
-                Ok(false)
+                Err(e)
             }
         }
     }
 
-    /// Parsear query RQL/SQL
-    fn parse_query(&self, query: &str) -> Result<String> {
-        // Por ahora, pasamos directamente el SQL sin parsear RQL
-        // TODO: Usar el parser RQL completo cuando esté listo
-        Ok(query.to_string())
+    /// Manejar comando USE SOURCE
+    fn handle_use_source(&mut self, path: &str, alias: Option<&str>, _options: &HashMap<String, String>) -> Result<()> {
+        // Detectar tipo de fuente por extensión
+        if path.ends_with(".csv") {
+            // Crear fuente CSV
+            let source_name = alias.unwrap_or(path);
+            let csv_source = CsvDataSource::new(
+                path,
+                source_name.to_string(),
+                CsvOptions::default()
+            ).map_err(|e| NoctraError::Internal(format!("Error loading CSV: {}", e)))?;
+
+            // Registrar fuente
+            self.executor.source_registry_mut()
+                .register(source_name.to_string(), Box::new(csv_source))
+                .map_err(|e| NoctraError::Internal(format!("Error registering source: {}", e)))?;
+
+            println!("✅ Fuente CSV '{}' cargada como '{}'", path, source_name);
+        } else {
+            println!("❌ Tipo de fuente no soportado: {}", path);
+            println!("   (Actualmente solo se soportan archivos .csv)");
+        }
+
+        Ok(())
+    }
+
+    /// Manejar comando SHOW SOURCES
+    fn handle_show_sources(&self) -> Result<()> {
+        let sources = self.executor.source_registry().list_sources();
+
+        if sources.is_empty() {
+            println!("ℹ️  No hay fuentes registradas");
+        } else {
+            println!("📊 Fuentes disponibles:");
+            for (alias, source_type) in sources {
+                println!("  • {} ({}) - {}", alias, source_type.type_name(), source_type.display_path());
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Manejar comando SHOW TABLES
+    fn handle_show_tables(&self, source: Option<&str>) -> Result<()> {
+        if let Some(source_name) = source {
+            // Mostrar tablas de una fuente específica
+            if let Some(data_source) = self.executor.source_registry().get(source_name) {
+                match data_source.schema() {
+                    Ok(tables) => {
+                        if tables.is_empty() {
+                            println!("ℹ️  No hay tablas en '{}'", source_name);
+                        } else {
+                            println!("📋 Tablas en '{}':", source_name);
+                            for table in tables {
+                                println!("  • {} ({} columnas)", table.name, table.columns.len());
+                            }
+                        }
+                    }
+                    Err(e) => println!("❌ Error obteniendo schema: {}", e),
+                }
+            } else {
+                println!("❌ Fuente '{}' no encontrada", source_name);
+            }
+        } else {
+            // Mostrar todas las tablas de todas las fuentes
+            let sources = self.executor.source_registry().list_sources();
+            if sources.is_empty() {
+                println!("ℹ️  No hay fuentes registradas");
+            } else {
+                for (alias, _) in sources {
+                    if let Some(data_source) = self.executor.source_registry().get(&alias) {
+                        if let Ok(tables) = data_source.schema() {
+                            if !tables.is_empty() {
+                                println!("📋 Tablas en '{}':", alias);
+                                for table in tables {
+                                    println!("  • {} ({} columnas)", table.name, table.columns.len());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Manejar comando SHOW VARS
+    fn handle_show_vars(&self) -> Result<()> {
+        let vars = self.session.list_variables();
+
+        if vars.is_empty() {
+            println!("ℹ️  No hay variables de sesión definidas");
+        } else {
+            println!("🔧 Variables de sesión:");
+            for (name, value) in vars {
+                println!("  {} = {}", name, value);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Manejar comando DESCRIBE
+    fn handle_describe(&self, source: Option<&str>, table: &str) -> Result<()> {
+        if let Some(source_name) = source {
+            // Describir tabla de una fuente específica
+            if let Some(data_source) = self.executor.source_registry().get(source_name) {
+                match data_source.schema() {
+                    Ok(tables) => {
+                        if let Some(table_info) = tables.iter().find(|t| t.name == table) {
+                            println!("📊 Estructura de {}.{}:", source_name, table);
+                            println!("  Columnas:");
+                            for col in &table_info.columns {
+                                println!("    • {} ({})", col.name, col.data_type);
+                            }
+                            if let Some(row_count) = table_info.row_count {
+                                println!("  Filas: {}", row_count);
+                            }
+                        } else {
+                            println!("❌ Tabla '{}' no encontrada en '{}'", table, source_name);
+                        }
+                    }
+                    Err(e) => println!("❌ Error obteniendo schema: {}", e),
+                }
+            } else {
+                println!("❌ Fuente '{}' no encontrada", source_name);
+            }
+        } else {
+            println!("❌ DESCRIBE requiere especificar la fuente: DESCRIBE source.table");
+        }
+
+        Ok(())
+    }
+
+    /// Manejar comando LET
+    fn handle_let(&mut self, variable: &str, expression: &str) -> Result<()> {
+        // Evaluar la expresión (por ahora, simplemente tomar el valor literal)
+        let value = expression.trim_matches('\'').trim_matches('"');
+        self.session.set_variable(variable.to_string(), value.to_string());
+        println!("✅ Variable '{}' = '{}'", variable, value);
+        Ok(())
+    }
+
+    /// Manejar comando UNSET
+    fn handle_unset(&mut self, variables: &[String]) -> Result<()> {
+        for var in variables {
+            self.session.remove_variable(var);
+            println!("✅ Variable '{}' eliminada", var);
+        }
+        Ok(())
     }
 
     /// Mostrar ayuda
@@ -247,11 +439,18 @@ impl Repl {
         println!("  :status, :stats  - Mostrar estado");
         println!("  :set KEY=VALUE   - Configurar variable");
         println!();
-        println!("📋 Ejemplos de SQL:");
+        println!("📋 Comandos SQL/RQL:");
         println!("  SELECT * FROM employees WHERE dept = 'IT';");
-        println!("  USE payroll;");
         println!("  LET dept = 'SALES';");
-        println!("  :dept => IT");
+        println!("  SHOW VARS;");
+        println!();
+        println!("🌐 Comandos NQL (Multi-fuente):");
+        println!("  USE 'data.csv' AS csv;              - Cargar archivo CSV");
+        println!("  SHOW SOURCES;                       - Listar fuentes activas");
+        println!("  SHOW TABLES;                        - Listar tablas de todas las fuentes");
+        println!("  SHOW TABLES FROM csv;               - Listar tablas de fuente específica");
+        println!("  DESCRIBE csv.clientes;              - Describir estructura de tabla");
+        println!("  UNSET variable;                     - Eliminar variable de sesión");
         println!();
     }
 
