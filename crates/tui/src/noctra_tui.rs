@@ -36,9 +36,6 @@ pub struct NoctraTui<'a> {
     /// Backend executor para ejecutar SQL
     executor: Executor,
 
-    /// RQL Processor para parsear comandos
-    processor: RqlProcessor,
-
     /// Sesión de usuario con variables y estado
     session: Session,
 
@@ -122,13 +119,9 @@ impl<'a> NoctraTui<'a> {
         // Crear sesión
         let session = Session::new();
 
-        // Crear processor RQL
-        let processor = RqlProcessor::new();
-
         Ok(Self {
             terminal,
             executor,
-            processor,
             session,
             mode: UiMode::Command,
             command_editor,
@@ -651,10 +644,20 @@ impl<'a> NoctraTui<'a> {
         self.command_number += 1;
 
         // Parsear con RqlProcessor
-        let runtime = tokio::runtime::Runtime::new()?;
-        let ast = runtime.block_on(async {
-            self.processor.process(&command_text).await
-        });
+        // Ejecutar en un thread separado para evitar conflictos con runtime de Tokio
+        let cmd = command_text.clone();
+        let result = std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let processor = RqlProcessor::new();
+            rt.block_on(async {
+                processor.process(&cmd).await
+            })
+        }).join();
+
+        let ast = match result {
+            Ok(r) => r,
+            Err(_) => return Err("Thread panic during parsing".into()),
+        };
 
         match ast {
             Ok(ast) => {
