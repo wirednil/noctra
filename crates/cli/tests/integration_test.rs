@@ -8,7 +8,7 @@ use std::sync::Arc;
 #[tokio::test]
 async fn test_simple_select_query() {
     // Crear configuración para SQLite en memoria
-    let config = CliConfig::for_memory_sqlite();
+    let _config = CliConfig::for_memory_sqlite();
 
     // Crear backend SQLite en memoria
     let backend = SqliteBackend::with_file(":memory:").unwrap();
@@ -28,7 +28,7 @@ async fn test_simple_select_query() {
 
 #[tokio::test]
 async fn test_create_and_select_table() {
-    let config = CliConfig::for_memory_sqlite();
+    let _config = CliConfig::for_memory_sqlite();
     let backend = SqliteBackend::with_file(":memory:").unwrap();
     let executor = Executor::new(Arc::new(backend));
     let session = Session::new();

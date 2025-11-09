@@ -3,10 +3,8 @@
 //! Widgets reutilizables como botones, labels, inputs y otros elementos
 //! básicos de interfaz de usuario.
 
-
 /// Estilo de texto
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TextStyle {
     /// Color del texto
     pub foreground_color: Option<String>,
@@ -23,7 +21,6 @@ pub struct TextStyle {
     /// Subrayado
     pub underline: bool,
 }
-
 
 /// Widget base
 pub trait Widget {

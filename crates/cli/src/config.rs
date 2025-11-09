@@ -41,8 +41,7 @@ pub struct GlobalConfig {
 }
 
 /// Configuración del CLI específica
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CliConfig {
     /// Configuración global
     pub global: GlobalConfig,
@@ -268,7 +267,6 @@ impl Default for GlobalConfig {
         }
     }
 }
-
 
 impl Default for ReplConfig {
     fn default() -> Self {

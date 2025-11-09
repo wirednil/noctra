@@ -38,6 +38,10 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 toml = "0.8"
 
+# Terminal UI
+crossterm = "0.28"
+ratatui = "0.29"
+
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio-test = { workspace = true }

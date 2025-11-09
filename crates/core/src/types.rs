@@ -5,9 +5,10 @@ use std::collections::HashMap;
 use std::fmt;
 
 /// Representa un valor en Noctra
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub enum Value {
     /// Valor nulo
+    #[default]
     Null,
 
     /// Entero de 64 bits
@@ -59,13 +60,6 @@ impl Value {
     /// Verificar si es nulo
     pub fn is_null(&self) -> bool {
         matches!(self, Self::Null)
-    }
-
-}
-
-impl Default for Value {
-    fn default() -> Self {
-        Self::Null
     }
 }
 

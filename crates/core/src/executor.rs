@@ -494,10 +494,7 @@ mod tests {
         executor
             .execute_rql(
                 &session,
-                RqlQuery::new(
-                    "CREATE TABLE test (id INTEGER, value TEXT)",
-                    HashMap::new(),
-                ),
+                RqlQuery::new("CREATE TABLE test (id INTEGER, value TEXT)", HashMap::new()),
             )
             .unwrap();
         executor
@@ -508,7 +505,8 @@ mod tests {
             .unwrap();
 
         // Update
-        let update_query = RqlQuery::new("UPDATE test SET value = 'new' WHERE id = 1", HashMap::new());
+        let update_query =
+            RqlQuery::new("UPDATE test SET value = 'new' WHERE id = 1", HashMap::new());
         let result = executor.execute_rql(&session, update_query);
 
         assert!(result.is_ok());
@@ -566,7 +564,7 @@ mod tests {
         params.insert("key1".to_string(), Value::Integer(42));
         params.insert("key2".to_string(), Value::Text("hello".to_string()));
         params.insert("key3".to_string(), Value::Boolean(true));
-        params.insert("key4".to_string(), Value::Float(3.14));
+        params.insert("key4".to_string(), Value::Float(2.5));
         params.insert("key5".to_string(), Value::Null);
 
         let result = map_parameters_to_sqlite(&params);

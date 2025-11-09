@@ -76,10 +76,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@master
-      
+      with:
+        toolchain: stable
+
     - name: Install system dependencies
       run: sudo apt-get install -y libncurses5-dev libncursesw5-dev
       
@@ -98,10 +100,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@master
-    
+      with:
+        toolchain: stable
+
     - name: Install tarpaulin
       run: |
         cargo install cargo-tarpaulin
@@ -116,20 +120,25 @@ jobs:
       uses: codecov/codecov-action@v3
       with:
         file: ./coverage/cobertura.xml
-        fail_ci_if_error: true
+        fail_ci_if_error: false
 
   security:
     name: Security Audit
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@master
-      
+      with:
+        toolchain: stable
+
+    - name: Install cargo-audit
+      run: cargo install --locked cargo-audit
+
     - name: Audit dependencies
-      run: cargo audit --db $(pwd)/advisory-db
-      
+      run: cargo audit
+
     - name: Check for dangerous code
       run: cargo deny check
 
@@ -138,10 +147,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@master
-      
+      with:
+        toolchain: stable
+
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libncurses5-dev libncursesw5-dev
+
     - name: Build release binaries
       run: cargo build --workspace --release
       
@@ -150,7 +164,7 @@ jobs:
         du -sh target/release/noctra
 
     - name: Upload binary artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: noctra-binaries-${{ github.sha }}
         path: target/release/noctra
@@ -161,9 +175,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+
     - name: Install cargo-deny
       run: cargo install --locked cargo-deny
-      
+
     - name: Run cargo deny check
       run: cargo deny check

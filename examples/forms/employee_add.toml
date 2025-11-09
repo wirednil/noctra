@@ -1,0 +1,125 @@
+# Formulario de alta de empleados
+# Ejemplo de FDL2 con validaciones completas
+
+title = "Add New Employee"
+description = "Register a new employee in the system"
+schema = "hr_database"
+
+# Campos del formulario
+[fields.name]
+label = "Full Name"
+type = "text"
+required = true
+width = 40
+
+[fields.name.validations]
+min_length = 3
+max_length = 100
+pattern = "^[A-Za-z\\s]+$"
+
+[fields.email]
+label = "Corporate Email"
+type = "email"
+required = true
+width = 40
+
+[fields.email.validations]
+pattern = "^[a-zA-Z0-9._%+-]+@company\\.com$"
+
+[fields.department]
+label = "Department"
+type = "text"
+required = true
+width = 20
+
+[fields.department.validations]
+allowed_values = ["IT", "SALES", "HR", "FINANCE", "OPERATIONS"]
+
+[fields.position]
+label = "Position"
+type = "text"
+required = true
+width = 30
+
+[fields.position.validations]
+min_length = 3
+max_length = 50
+
+[fields.salary]
+label = "Annual Salary"
+type = "float"
+required = true
+width = 15
+
+[fields.salary.validations]
+min = "30000"
+max = "500000"
+
+[fields.hire_date]
+label = "Hire Date"
+type = "date"
+required = true
+default = "2025-11-08"
+
+[fields.phone]
+label = "Phone Number"
+type = "text"
+required = false
+width = 20
+
+[fields.phone.validations]
+pattern = "^\\+?[0-9]{10,15}$"
+
+[fields.address]
+label = "Address"
+type = "textarea"
+required = false
+
+[fields.emergency_contact]
+label = "Emergency Contact"
+type = "text"
+required = false
+width = 30
+
+# Acciones disponibles
+[actions.save]
+action_type = "insert"
+param_type = "named"
+sql = """
+INSERT INTO employees (
+    name,
+    email,
+    department,
+    position,
+    salary,
+    hire_date,
+    phone,
+    address,
+    emergency_contact,
+    active,
+    created_at
+) VALUES (
+    :name,
+    :email,
+    :department,
+    :position,
+    :salary,
+    :hire_date,
+    :phone,
+    :address,
+    :emergency_contact,
+    1,
+    datetime('now')
+)
+"""
+
+[actions.cancel]
+action_type = "script"
+
+# Configuración de UI
+[ui_config]
+layout = "single"
+width = 80
+height = 24
+theme = "default"
+buttons = ["save", "cancel"]

@@ -1,0 +1,103 @@
+# Formulario de búsqueda de empleados
+# Ejemplo de FDL2 (Form Definition Language 2)
+
+title = "Employee Search"
+description = "Search and filter employees by various criteria"
+schema = "hr_database"
+
+# Campos del formulario
+[fields.id]
+label = "Employee ID"
+type = "int"
+required = false
+width = 10
+
+[fields.id.validations]
+min = "1"
+max = "999999"
+
+[fields.name]
+label = "Full Name"
+type = "text"
+required = false
+width = 30
+
+[fields.name.validations]
+min_length = 2
+max_length = 100
+
+[fields.department]
+label = "Department"
+type = "text"
+required = false
+width = 20
+
+[fields.email]
+label = "Email Address"
+type = "email"
+required = false
+width = 40
+
+[fields.active]
+label = "Active Only"
+type = "bool"
+required = false
+default = "true"
+
+[fields.hire_date_from]
+label = "Hired After"
+type = "date"
+required = false
+
+[fields.hire_date_to]
+label = "Hired Before"
+type = "date"
+required = false
+
+# Acciones disponibles
+[actions.search]
+action_type = "query"
+param_type = "named"
+sql = """
+SELECT
+    id,
+    name,
+    department,
+    email,
+    hire_date,
+    salary
+FROM employees
+WHERE
+    (:id IS NULL OR id = :id)
+    AND (:name IS NULL OR name LIKE '%' || :name || '%')
+    AND (:department IS NULL OR department = :department)
+    AND (:email IS NULL OR email LIKE '%' || :email || '%')
+    AND (:active IS NULL OR active = :active)
+    AND (:hire_date_from IS NULL OR hire_date >= :hire_date_from)
+    AND (:hire_date_to IS NULL OR hire_date <= :hire_date_to)
+ORDER BY hire_date DESC
+"""
+
+[actions.clear]
+action_type = "script"
+
+[actions.export]
+action_type = "query"
+param_type = "named"
+sql = """
+SELECT * FROM employees
+WHERE department = :department
+"""
+
+# Configuración de UI
+[ui_config]
+layout = "single"
+width = 80
+height = 24
+theme = "default"
+buttons = ["search", "clear", "export"]
+
+# Configuración de paginación
+[pagination]
+page_size = 20
+order_by = ["hire_date DESC", "name ASC"]
