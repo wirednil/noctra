@@ -10,7 +10,7 @@ pub mod template;
 
 pub use error::{ParserError, ParserResult};
 pub use parser::{RqlParser, RqlProcessor};
-pub use rql_ast::{ParameterType, RqlAst, RqlParameter, RqlStatement};
+pub use rql_ast::{ExportFormat, MapExpression, ParameterType, RqlAst, RqlParameter, RqlStatement};
 pub use template::{TemplateEngine, TemplateProcessor};
 
 #[cfg(test)]

@@ -28,14 +28,60 @@ pub enum RqlStatement {
         parameters: HashMap<String, ParameterType>,
     },
 
-    /// Comando USE para cambiar esquema
+    /// Comando USE para cambiar esquema/fuente de datos (RQL legacy)
     Use { schema: String },
+
+    /// Comando USE para fuentes NQL (con alias y opciones)
+    UseSource {
+        path: String,
+        alias: Option<String>,
+        options: HashMap<String, String>,
+    },
 
     /// Comando LET para variables de sesión
     Let {
         variable: String,
         expression: String,
     },
+
+    /// Comando UNSET para eliminar variables
+    Unset { variables: Vec<String> },
+
+    /// Comando SHOW SOURCES
+    ShowSources,
+
+    /// Comando SHOW TABLES
+    ShowTables { source: Option<String> },
+
+    /// Comando SHOW VARS
+    ShowVars,
+
+    /// Comando SHOW/DESCRIBE table
+    Describe {
+        source: Option<String>,
+        table: String,
+    },
+
+    /// Comando IMPORT
+    Import {
+        file: String,
+        table: String,
+        options: HashMap<String, String>,
+    },
+
+    /// Comando EXPORT
+    Export {
+        query: String, // Can be table name or SELECT query
+        file: String,
+        format: ExportFormat,
+        options: HashMap<String, String>,
+    },
+
+    /// Comando MAP (transformaciones)
+    Map { expressions: Vec<MapExpression> },
+
+    /// Comando FILTER (filtrado)
+    Filter { condition: String },
 
     /// Comando FORM LOAD
     FormLoad { form_path: String },
@@ -51,6 +97,21 @@ pub enum RqlStatement {
         destination: OutputDestination,
         format: OutputFormat,
     },
+}
+
+/// Expresión para MAP
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MapExpression {
+    pub expression: String,
+    pub alias: Option<String>,
+}
+
+/// Formato de exportación
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ExportFormat {
+    Csv,
+    Json,
+    Xlsx,
 }
 
 /// Parámetro extraído del código RQL
@@ -225,11 +286,88 @@ impl RqlAst {
             .map(|stmt| match stmt {
                 RqlStatement::Sql { sql, .. } => sql.clone(),
                 RqlStatement::Use { schema } => format!("USE {};", schema),
+                RqlStatement::UseSource { path, alias, options } => {
+                    let alias_str = alias.as_ref().map(|a| format!(" AS {}", a)).unwrap_or_default();
+                    let opts_str = if options.is_empty() {
+                        String::new()
+                    } else {
+                        let opts: Vec<String> = options
+                            .iter()
+                            .map(|(k, v)| format!("{}={}", k, v))
+                            .collect();
+                        format!(" OPTIONS ({})", opts.join(", "))
+                    };
+                    format!("USE '{}'{}{};", path, alias_str, opts_str)
+                }
                 RqlStatement::Let {
                     variable,
                     expression,
                 } => {
                     format!("LET {} = {};", variable, expression)
+                }
+                RqlStatement::Unset { variables } => {
+                    format!("UNSET {};", variables.join(", "))
+                }
+                RqlStatement::ShowSources => "SHOW SOURCES;".to_string(),
+                RqlStatement::ShowTables { source } => {
+                    if let Some(src) = source {
+                        format!("SHOW TABLES FROM {};", src)
+                    } else {
+                        "SHOW TABLES;".to_string()
+                    }
+                }
+                RqlStatement::ShowVars => "SHOW VARS;".to_string(),
+                RqlStatement::Describe { source, table } => {
+                    if let Some(src) = source {
+                        format!("DESCRIBE {}.{};", src, table)
+                    } else {
+                        format!("DESCRIBE {};", table)
+                    }
+                }
+                RqlStatement::Import { file, table, options } => {
+                    let opts_str = if options.is_empty() {
+                        String::new()
+                    } else {
+                        let opts: Vec<String> = options
+                            .iter()
+                            .map(|(k, v)| format!("{}={}", k, v))
+                            .collect();
+                        format!(" OPTIONS ({})", opts.join(", "))
+                    };
+                    format!("IMPORT '{}' AS {}{};", file, table, opts_str)
+                }
+                RqlStatement::Export { query, file, format, options } => {
+                    let format_str = match format {
+                        ExportFormat::Csv => "CSV",
+                        ExportFormat::Json => "JSON",
+                        ExportFormat::Xlsx => "XLSX",
+                    };
+                    let opts_str = if options.is_empty() {
+                        String::new()
+                    } else {
+                        let opts: Vec<String> = options
+                            .iter()
+                            .map(|(k, v)| format!("{}={}", k, v))
+                            .collect();
+                        format!(" OPTIONS ({})", opts.join(", "))
+                    };
+                    format!("EXPORT {} TO '{}' FORMAT {}{};", query, file, format_str, opts_str)
+                }
+                RqlStatement::Map { expressions } => {
+                    let exprs: Vec<String> = expressions
+                        .iter()
+                        .map(|e| {
+                            if let Some(alias) = &e.alias {
+                                format!("{} AS {}", e.expression, alias)
+                            } else {
+                                e.expression.clone()
+                            }
+                        })
+                        .collect();
+                    format!("MAP {};", exprs.join(", "))
+                }
+                RqlStatement::Filter { condition } => {
+                    format!("FILTER {};", condition)
                 }
                 RqlStatement::FormLoad { form_path } => {
                     format!("FORM LOAD '{}';", form_path)
@@ -300,7 +438,17 @@ impl RqlStatement {
         match self {
             RqlStatement::Sql { .. } => "SQL",
             RqlStatement::Use { .. } => "USE",
+            RqlStatement::UseSource { .. } => "USE_SOURCE",
             RqlStatement::Let { .. } => "LET",
+            RqlStatement::Unset { .. } => "UNSET",
+            RqlStatement::ShowSources => "SHOW_SOURCES",
+            RqlStatement::ShowTables { .. } => "SHOW_TABLES",
+            RqlStatement::ShowVars => "SHOW_VARS",
+            RqlStatement::Describe { .. } => "DESCRIBE",
+            RqlStatement::Import { .. } => "IMPORT",
+            RqlStatement::Export { .. } => "EXPORT",
+            RqlStatement::Map { .. } => "MAP",
+            RqlStatement::Filter { .. } => "FILTER",
             RqlStatement::FormLoad { .. } => "FORM_LOAD",
             RqlStatement::ExecForm { .. } => "EXECFORM",
             RqlStatement::OutputTo { .. } => "OUTPUT_TO",
