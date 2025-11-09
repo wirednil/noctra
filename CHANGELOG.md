@@ -7,22 +7,123 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- CSV file support with automatic delimiter detection
-- NQL (Noctra Query Language) basic commands
-- Multi-source data management with SourceRegistry
-- Complete CSV backend with type inference
-- Session variable management (LET, UNSET, SHOW VARS)
+## [2.0.0] - TBD (Milestone 6 - "FABRIC") - **PLANNED**
 
-### Changed
-- NQL commands now return SQL-style tables instead of dialogs
-- Status bar shows `source:table` format for better context
-- Parser now handles quoted values in OPTIONS correctly
+> **"No importes datos. Consúltalos."**
 
-### Fixed
-- "Failed to prepare" error when querying CSV files
-- Tokio runtime panic in TUI and REPL
-- OPTIONS parser now handles commas in quoted values
+### Vision
+
+Transform Noctra into a **Data Fabric Engine** by integrating DuckDB as the primary ad hoc analytics engine. Query any file (CSV, JSON, Parquet) as native SQL tables without staging or mandatory databases.
+
+### Planned Features
+
+#### DuckDB Integration
+- **New Crate**: `noctra-duckdb` with complete DuckDB integration
+- **QueryEngine Modes**: SQLite, DuckDB, Hybrid (default)
+  - Hybrid mode: Automatic routing between DuckDB (files) and SQLite (databases)
+- **File-Native Queries**: Direct queries on CSV/JSON/Parquet without registration
+  - `SELECT * FROM 'data.csv'` - query files directly
+  - `USE 'data.csv' AS t` - instant table registration
+  - `USE 'sales_*.csv' AS sales` - multi-file glob support
+  - Compressed files: `USE 'data.csv.gz' AS data`
+
+#### NQL 2.0 Extensions
+- **EXPORT Command**: Multi-format export (CSV, JSON, Parquet, Excel)
+  - `EXPORT ... TO 'file.parquet' FORMAT PARQUET`
+  - Custom delimiters and headers
+  - Column selection support
+- **MAP Transformations**: Declarative column transformations
+  - `MAP price = price * 1.1, category = UPPER(category)`
+- **FILTER Operations**: Simplified filtering without WHERE
+  - `FILTER date >= '2024-01-01' AND active = true`
+- **Cross-Source JOINs**: Seamless joins between CSV and SQLite
+  - `SELECT c.* FROM 'clients.csv' c JOIN db.orders o ON c.id = o.client_id`
+
+#### TUI Enhancements
+- **Dynamic Status Bar**: Shows engine type (DuckDB/SQLite/Hybrid) and active source
+  - `Engine: DuckDB | Source: 'ventas.csv' | 12ms`
+- **Source Type Indicators**: Visual icons for different source types
+  - 🦆 CSV/JSON/Parquet (DuckDB)
+  - 📦 SQLite databases
+- **Export Shortcut**: Ctrl+E for quick data export
+- **Engine Selection Dialog**: Switch between engines on-the-fly
+
+#### CLI Enhancements
+- **Ad Hoc Mode**: Launch without database
+  - `noctra --engine duckdb --use 'data.csv'`
+- **Hybrid Mode** (default): SQLite + DuckDB
+  - `noctra --engine hybrid --db main.db --use 'extra.csv'`
+- **Traditional Mode**: SQLite only (backward compatible)
+  - `noctra --engine sqlite --db database.db`
+
+#### Configuration System
+- **Config File**: `~/.config/noctra/config.toml`
+  - Default engine selection
+  - DuckDB memory limits and thread count
+  - CSV auto-detection settings
+  - Export defaults
+
+### Performance Targets
+
+- CSV 10MB loads in <500ms
+- 100K row aggregation in <1s
+- Parquet read 10x faster than CSV
+- Memory usage <100MB for typical workloads
+
+### Breaking Changes
+
+None. Full backward compatibility maintained.
+
+### Migration Notes
+
+- Existing SQLite workflows unchanged
+- New `--engine` flag optional (defaults to hybrid mode)
+- Configuration file optional (sensible defaults)
+
+### Known Limitations
+
+- DuckDB in-memory only (no persistent DuckDB databases in v2.0)
+- No support for DuckDB extensions beyond bundled ones
+- MAP/FILTER limited to single table operations
+- No streaming mode for files >10GB (planned for v2.1)
+
+---
+
+## [0.2.0] - TBD (Milestone 4) - **PLANNED**
+
+### Planned Features
+
+#### Advanced NQL Commands
+- **IMPORT Command**: Import data from various formats into SQLite
+  - `IMPORT FROM 'data.csv' INTO table OPTIONS (...)`
+  - Batch import with progress feedback
+  - Support for CSV, JSON, TSV
+- **Enhanced MAP/FILTER**: Chainable transformations
+- **Advanced CSV Queries**: WHERE, ORDER BY, LIMIT on CSV files
+  - Aggregations: COUNT, SUM, AVG, MIN, MAX on CSV
+
+#### Security & Performance
+- **Input Validation**: SQL injection prevention
+- **File Path Sandboxing**: Prevent directory traversal
+- **Resource Limits**: Max rows, query timeout, memory limits
+- **Query Result Caching**: TTL-based cache for repeated queries
+- **Lazy Loading**: Handle large datasets efficiently
+- **Prepared Statement Pooling**: Connection pooling for backends
+
+#### TUI Improvements
+- **Virtual Scrolling**: Optimize rendering for large result sets
+- **Memory Profiling**: Show memory usage in status bar
+- **Query History**: Persistent query history with search
+
+### Performance Targets
+
+- Query execution: <100ms for simple queries
+- Parser: <1ms for typical queries
+- Table rendering: <50ms for 100 rows
+- Memory usage: <50MB baseline
+- CSV parsing: <500ms for 1MB files
+
+---
 
 ## [0.1.0] - 2025-11-09 (Milestone 3.5)
 

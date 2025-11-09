@@ -10,7 +10,7 @@
 
 Noctra es un entorno SQL interactivo moderno escrito en Rust con filosofía 4GL, proporcionando una experiencia profesional de consulta SQL con formularios declarativos y TUI avanzado.
 
-**Progreso General:** M1 ✅ | M2 ✅ | M3 ✅ | **M3.5 ✅** | M4 📋 | M5 📋
+**Progreso General:** M1 ✅ | M2 ✅ | M3 ✅ | **M3.5 ✅** | M4 📋 | M5 📋 | M6 🎯
 
 | Milestone | Estado | Progreso | Último Commit |
 |-----------|--------|----------|---------------|
@@ -20,7 +20,8 @@ Noctra es un entorno SQL interactivo moderno escrito en Rust con filosofía 4GL,
 | **M3: Backend SQL/RQL** | ✅ Completado | 100% | a64a72c |
 | **M3.5: CSV/NQL Hotfix** | ✅ Completado | 100% | dbddebc |
 | **M4: Advanced Features** | 📋 Planificado | 0% | - |
-| **M5: Production Ready** | 📋 Planificado | 0% | - |
+| **M5: Extended Capabilities** | 📋 Planificado | 0% | - |
+| **M6: Noctra 2.0 "FABRIC"** | 🎯 Planificado | 0% | - |
 
 **Total Tests:** 29 pasando (100%)
 **Build:** Release OK sin warnings
@@ -1067,6 +1068,167 @@ noctra tui --schema demo
 - Sin Alt+R/W file operations
 - Sin soporte para transacciones explícitas
 - Sin connection pooling
+
+---
+
+## 🎯 NOCTRA 2.0 "FABRIC" - VISIÓN Y PLANIFICACIÓN
+
+### Vision Statement
+
+> **"No importes datos. Consúltalos."**
+> **"Un archivo. Una tabla. Un lenguaje."**
+> **"Noctra no necesita una base de datos. Tú sí."**
+
+### Objetivos Estratégicos
+
+Noctra 2.0 "FABRIC" transformará Noctra en un **Data Fabric Engine** mediante la integración completa de DuckDB como motor de análisis ad hoc.
+
+**🎯 Capacidad Central:** Consultar cualquier archivo (CSV, JSON, Parquet) como tabla SQL nativa sin staging, imports ni bases de datos obligatorias.
+
+**🚀 Innovación Clave:** Los archivos se convierten en tablas. Las consultas son instantáneas. Las bases de datos se vuelven opcionales.
+
+### Arquitectura Propuesta
+
+#### Nuevo Crate: `noctra-duckdb`
+
+```
+noctra/
+├── crates/
+│   ├── noctra-core/           # + QueryEngine::DuckDB, Hybrid
+│   ├── noctra-parser/         # + NQL 2.0 extensions
+│   ├── noctra-duckdb/         # ← NUEVO (2 semanas)
+│   │   ├── src/
+│   │   │   ├── lib.rs         # Entry point
+│   │   │   ├── source.rs      # DuckDBSource impl
+│   │   │   ├── engine.rs      # Query execution
+│   │   │   └── extensions.rs  # Parquet, JSON support
+│   │   └── Cargo.toml
+│   ├── noctra-tui/            # + barra de estado dinámica
+│   └── noctra-cli/            # + --engine flag
+```
+
+**QueryEngine Evolution:**
+```rust
+pub enum QueryEngine {
+    Sqlite(Box<dyn DatabaseBackend>),
+    DuckDB(DuckDBConnection),        // ← NUEVO
+    Hybrid {                          // ← NUEVO (default)
+        duckdb: DuckDBConnection,
+        sqlite: SqliteConnection
+    },
+}
+```
+
+### NQL 2.0 - Extensiones Clave
+
+| Comando | Funcionalidad |
+|---------|---------------|
+| `USE 'file.csv' AS t` | Registro instantáneo de archivo como tabla |
+| `SELECT * FROM 'file.csv'` | Consulta directa sin pre-registro |
+| `EXPORT ... TO 'file.parquet'` | Export multi-formato (CSV, JSON, Parquet) |
+| `MAP col = expr` | Transformaciones declarativas |
+| `FILTER condition` | Filtrado sin WHERE SQL |
+| JOINs cross-source | CSV ⟷ SQLite ⟷ JSON sin ETL |
+
+**Ejemplo Completo:**
+```sql
+USE 'sales_*.csv' AS sales;    -- Multi-file glob
+USE 'warehouse.db' AS db;       -- SQLite database
+
+SELECT s.product, p.name, SUM(s.total)
+FROM sales s
+JOIN db.products p ON s.product_id = p.id
+WHERE s.date >= '2024-01-01'
+GROUP BY s.product, p.name;
+
+EXPORT (SELECT * FROM sales WHERE region = 'LATAM')
+TO 'latam.parquet' FORMAT PARQUET;
+```
+
+### Modos de Operación
+
+```bash
+# Ad Hoc: Solo DuckDB, sin base de datos
+noctra --engine duckdb --use 'data.csv'
+
+# Híbrido: SQLite + DuckDB (default)
+noctra --engine hybrid --db warehouse.db --use 'recent.csv'
+
+# Tradicional: Solo SQLite (retrocompatibilidad)
+noctra --engine sqlite --db database.db
+```
+
+### TUI Enhancements
+
+**Barra de Estado Dinámica:**
+```
+──( RESULT ) Noctra 2.0 ─── Engine: DuckDB ─── Source: 'ventas.csv' ─── 12ms
+3 filas | Memory: 45MB | F5:Run | Ctrl+E:Export
+```
+
+**Indicadores de Fuente:**
+```
+┌─────────────────────────────────────────────────┐
+│ 📊 ACTIVE SOURCES                               │
+├──────────┬─────────┬──────────────────────────┤
+│ ventas   │ 🦆 CSV  │ ./data/ventas_2024.csv    │
+│ clientes │ 🦆 JSON │ ./data/clientes.json      │
+│ main     │ 📦 SQLite│ ./database.db           │
+└──────────┴─────────┴──────────────────────────┘
+```
+
+### Roadmap de Implementación
+
+**Duration:** 2 semanas
+**Target:** 2026-03-01
+**Version:** v2.0.0
+
+| Semana | Fase | Tareas Clave |
+|--------|------|--------------|
+| **1** | Core DuckDB | - Crate `noctra-duckdb`<br>- `DataSource` implementation<br>- `USE 'file.csv'` → CREATE VIEW<br>- Parser NQL 2.0 extensions |
+| **2** | Integration | - EXPORT multi-formato<br>- TUI status bar dinámico<br>- CLI `--engine` flag<br>- Configuration system<br>- Modo ad hoc |
+
+### Criterios de Éxito
+
+**Funcionales:**
+- ✅ Cargar CSV/JSON/Parquet con `USE`
+- ✅ Consultas directas sobre archivos
+- ✅ JOIN cross-source (CSV + SQLite)
+- ✅ EXPORT a múltiples formatos
+- ✅ Modo ad hoc sin base de datos
+
+**Performance:**
+- ✅ CSV 10MB en <500ms
+- ✅ Agregación 100K filas en <1s
+- ✅ Parquet 10x más rápido que CSV
+- ✅ Memoria <100MB (workloads típicos)
+
+**Calidad:**
+- ✅ Coverage >90%
+- ✅ Zero clippy warnings
+- ✅ Documentación completa
+- ✅ Migration guide de v1.0
+
+### Impacto Esperado
+
+**Casos de Uso Desbloqueados:**
+1. **Análisis ad hoc** sin base de datos
+2. **Pipelines ligeros** sin ETL complejo
+3. **Exploración rápida** de datasets
+4. **Prototipado** de queries sobre archivos
+5. **Cross-source analytics** sin staging
+
+**Diferenciación:**
+- ❌ **Antes:** Import CSV → SQLite → Query (lento, staging requerido)
+- ✅ **Después:** Query CSV directamente (instantáneo, zero-copy)
+
+**Valor para Usuarios:**
+- Reducción de 80% en tiempo de setup para análisis
+- Eliminación de staging manual
+- Soporte nativo de formatos modernos (Parquet)
+- Análisis multi-fuente sin herramientas externas
+
+---
 
 ### 🎯 Siguiente Acción Recomendada
 
