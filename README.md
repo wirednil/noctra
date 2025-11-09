@@ -4,13 +4,14 @@
 
 ## 📚 Documentación
 
+- **[Project Status](docs/PROJECT_STATUS.md)** - Estado actual del proyecto y progreso de milestones
 - **[Getting Started](docs/GETTING_STARTED.md)** - Guía de inicio rápido y tutorial
 - **[Design Document](docs/DESIGN.md)** - Arquitectura técnica completa
 - **[Roadmap](docs/ROADMAP.md)** - Timeline de desarrollo y milestones
 - **[RQL Extensions](docs/RQL-EXTENSIONS.md)** - Referencia del lenguaje SQL extendido
 - **[FDL2 Specification](docs/FDL2-SPEC.md)** - Especificación de formularios
 - **[API Reference](docs/API-REFERENCE.md)** - API de programación
-- **[Contributing](CONTRIBUTING.md)** - Guía para contribuidores
+- **[Contributing](docs/CONTRIBUTING.md)** - Guía para contribuidores
 
 ## 🎯 Descripción
 
@@ -101,36 +102,32 @@ Departamento: [SALES▼]
 [Consultar] [Cancelar]
 ```
 
-## 📋 Roadmap MVP
+## 📋 Estado del Proyecto
 
-### Milestone 0 ✅ (Completado)
-- Workspace Cargo configurado
-- Todos los crates creados
-- CI básico configurado
+**Versión Actual:** 0.1.0
+**Progreso:** M1 ✅ | M2 ✅ | M3 ✅ | M4 📋 | M5 📋
 
-### Milestone 1 🔄 (En progreso - 83% completado)
+| Milestone | Estado | Progreso |
+|-----------|--------|----------|
+| **M0: Foundation** | ✅ Completado | 100% |
+| **M1: Core + Parser** | ✅ Completado | 100% |
+| **M2: Forms + TUI** | ✅ Completado | 100% |
+| **M3: Backend Integration** | ✅ Completado | 100% |
+| **M4: Advanced Features** | 📋 Planificado | 0% |
+| **M5: Production Ready** | 📋 Planificado | 0% |
 
-**Estado de Compilación:**
-- ✅ **noctra-core** - Runtime, executor, tipos (0 errores)
-- ✅ **noctra-parser** - Parser RQL/SQL con templates (0 errores)
-- ✅ **noctra-tui** - Terminal UI, layout, widgets (0 errores)
-- ✅ **noctra-formlib** - Parser FDL2 formularios (0 errores)
-- ✅ **noctra-ffi** - Bindings C (0 errores)
-- ⚠️ **noctra-cli** - REPL interactivo (39 errores pendientes)
-- 🚫 **noctra-srv** - Temporalmente deshabilitado (Milestone 4)
+### ✅ Funcionalidad Actual
 
-**Progreso:**
-- `core::Executor` funcional ✅
-- `SqliteBackend` con rusqlite ✅
-- Parser RQL completo ✅
-- CLI REPL básico con rustyline 🔄 (en corrección)
-- Ejecución simple de SELECT ⏳ (pendiente de CLI)
+- **Core Runtime**: Executor SQL con SQLite (in-memory y file-based)
+- **RQL Parser**: SQL extendido con parámetros y templates
+- **TUI Completo**: Interfaz Ratatui con 3 modos (Command/Result/Dialog)
+- **Formularios FDL2**: Sistema declarativo de formularios en TOML
+- **Backend Integration**: TUI ejecuta SQL real (no simulado)
+- **CLI**: REPL interactivo y comandos batch
 
-### Milestones Siguientes
-- **Milestone 2**: Form loader & TUI renderer
-- **Milestone 3**: Parser RQL + batch mode
-- **Milestone 4**: Daemon noctrad (opcional)
-- **Milestone 5**: Testing y documentación
+### 🎯 Próximos Pasos
+
+Ver [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) para detalles completos del roadmap y próximos milestones.
 
 ## 🧪 Testing
 
@@ -149,12 +146,6 @@ cargo install cargo-tarpaulin
 cargo tarpaulin --workspace --out html
 ```
 
-## 📚 Documentación
-
-- **[DESIGN.md](../DESIGN.md)** - Especificación técnica completa
-- **[FDL2-SPEC.md](docs/FDL2-SPEC.md)** - Especificación de formularios
-- **[RQL-EXTENSIONS.md](docs/RQL-EXTENSIONS.md)** - Extensiones SQL
-- **[API-REFERENCE.md](docs/API-REFERENCE.md)** - API reference
 
 ## 🔧 Development
 
@@ -164,20 +155,31 @@ cargo tarpaulin --workspace --out html
 noctra/
 ├── Cargo.toml                 # Workspace root
 ├── README.md                  # Este archivo
-├── DESIGN.md                  # Especificación completa
 ├── .github/
 │   └── workflows/
 │       └── ci.yml             # CI pipeline
 ├── crates/
-│   ├── core/                  # Runtime principal
-│   ├── parser/                # Parser RQL
-│   ├── cli/                   # CLI/REPL
-│   ├── tui/                   # TUI + NWM
-│   ├── srv/                   # Daemon
-│   ├── formlib/               # Formularios
-│   └── ffi/                   # C bindings
-├── docs/                      # Documentación
-├── examples/                  # Ejemplos
+│   ├── core/                  # ✅ Runtime principal (Executor, Session, Backend)
+│   ├── parser/                # ✅ Parser RQL/SQL
+│   ├── cli/                   # ✅ CLI/REPL + TUI launcher
+│   ├── tui/                   # ✅ TUI + NWM con backend integration
+│   ├── srv/                   # 📋 Daemon (Milestone 5)
+│   ├── formlib/               # ✅ Formularios FDL2
+│   └── ffi/                   # ✅ C bindings
+├── docs/                      # 📚 Documentación completa
+│   ├── PROJECT_STATUS.md      # Estado actual y progreso
+│   ├── DESIGN.md              # Arquitectura técnica
+│   ├── ROADMAP.md             # Timeline de desarrollo
+│   ├── GETTING_STARTED.md     # Guía de inicio
+│   ├── RQL-EXTENSIONS.md      # Referencia RQL
+│   ├── FDL2-SPEC.md           # Especificación de formularios
+│   ├── FORMS.md               # Documentación de formularios
+│   ├── API-REFERENCE.md       # API reference
+│   ├── CONTRIBUTING.md        # Guía para contribuir
+│   └── archive/               # Documentos históricos
+├── examples/                  # Ejemplos de uso
+│   ├── forms/                 # Formularios TOML
+│   └── scripts/               # Scripts RQL
 └── tests/                     # Test suite
 ```
 
