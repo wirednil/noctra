@@ -14,15 +14,4 @@ pub use rql_ast::{ExportFormat, MapExpression, ParameterType, RqlAst, RqlParamet
 pub use template::{TemplateEngine, TemplateProcessor};
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_basic_parsing() {
-        let parser = RqlParser::new();
-        let input = "SELECT * FROM employees WHERE dept = :dept";
-
-        let ast = parser.parse_rql(input).await.unwrap();
-        assert!(!ast.statements.is_empty());
-    }
-}
+mod tests;  // Include comprehensive tests from tests.rs

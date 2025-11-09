@@ -268,9 +268,8 @@ pub mod utils {
 
     /// Crear variables de sesión desde hashmap
     pub fn session_vars_from_map(map: &HashMap<String, String>) -> HashMap<String, String> {
-        map.iter()
-            .map(|(k, v)| (format!("#{}", k), v.clone()))
-            .collect()
+        // Simply clone the map - the engine expects keys without # prefix
+        map.clone()
     }
 
     /// Crear engine con configuraciones comunes
