@@ -145,6 +145,11 @@ impl<'a> NoctraTui<'a> {
             let dialog_options = self.dialog_options.clone();
             let dialog_selected = self.dialog_selected;
 
+            // Obtener fuente activa
+            let active_source = self.executor.source_registry()
+                .active()
+                .map(|source| source.name().to_string());
+
             self.terminal.draw(|frame| {
                 Self::render_frame(
                     frame,
@@ -155,6 +160,7 @@ impl<'a> NoctraTui<'a> {
                     dialog_message.as_deref(),
                     &dialog_options,
                     dialog_selected,
+                    active_source.as_deref(),
                 );
             })?;
 
@@ -182,6 +188,7 @@ impl<'a> NoctraTui<'a> {
         dialog_message: Option<&str>,
         dialog_options: &[String],
         dialog_selected: usize,
+        active_source: Option<&str>,
     ) {
         let size = frame.area();
 
@@ -197,7 +204,7 @@ impl<'a> NoctraTui<'a> {
             .split(size);
 
         // Renderizar componentes
-        Self::render_header(frame, chunks[0], mode, command_number);
+        Self::render_header(frame, chunks[0], mode, command_number, active_source);
         Self::render_workspace(
             frame,
             chunks[1],
@@ -213,7 +220,7 @@ impl<'a> NoctraTui<'a> {
     }
 
     /// Renderizar barra de header
-    fn render_header(frame: &mut Frame, area: Rect, mode: UiMode, command_number: usize) {
+    fn render_header(frame: &mut Frame, area: Rect, mode: UiMode, command_number: usize, active_source: Option<&str>) {
         let mode_text = match mode {
             UiMode::Command => "INSERTAR",
             UiMode::Result => "RESULTADO",
@@ -223,15 +230,22 @@ impl<'a> NoctraTui<'a> {
 
         let header_text = format!("──( {} ) SQL Noctra 0.1.0", mode_text);
 
+        // Agregar indicador de fuente activa si existe
+        let source_text = if let Some(source_name) = active_source {
+            format!(" ── Fuente: {} ──", source_name)
+        } else {
+            String::new()
+        };
+
         let cmd_text = format!("Cmd: {}───", command_number);
 
         // Calcular padding para alinear a la derecha
         let padding_len = area
             .width
-            .saturating_sub(header_text.len() as u16 + cmd_text.len() as u16);
+            .saturating_sub(header_text.len() as u16 + source_text.len() as u16 + cmd_text.len() as u16);
         let padding = "─".repeat(padding_len as usize);
 
-        let full_header = format!("{}{}{}", header_text, padding, cmd_text);
+        let full_header = format!("{}{}{}{}", header_text, source_text, padding, cmd_text);
 
         let header = Paragraph::new(full_header)
             .style(

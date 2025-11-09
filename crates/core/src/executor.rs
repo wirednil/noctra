@@ -1,5 +1,6 @@
 //! Executor principal y backends para Noctra
 
+use crate::datasource::SourceRegistry;
 use crate::error::{NoctraError, Result};
 use crate::session::Session;
 use crate::types::{Parameters, ResultSet, Value};
@@ -230,8 +231,11 @@ impl Backend for SqliteBackend {
 /// Executor principal de Noctra
 #[derive(Debug)]
 pub struct Executor {
-    /// Backend subyacente
+    /// Backend subyacente (para backward compatibility)
     backend: Arc<dyn Backend>,
+
+    /// Registry de fuentes de datos para NQL multi-source
+    source_registry: SourceRegistry,
 
     /// Configuración del executor
     config: ExecutorConfig,
@@ -242,6 +246,7 @@ impl Executor {
     pub fn new(backend: Arc<dyn Backend>) -> Self {
         Self {
             backend,
+            source_registry: SourceRegistry::new(),
             config: ExecutorConfig::default(),
         }
     }
@@ -315,6 +320,16 @@ impl Executor {
     /// Configuración del executor
     pub fn config(&self) -> &ExecutorConfig {
         &self.config
+    }
+
+    /// Get access to the source registry (NQL multi-source support)
+    pub fn source_registry(&self) -> &SourceRegistry {
+        &self.source_registry
+    }
+
+    /// Get mutable access to the source registry
+    pub fn source_registry_mut(&mut self) -> &mut SourceRegistry {
+        &mut self.source_registry
     }
 
     /// Procesar templates en SQL con variables de sesión
@@ -607,5 +622,21 @@ mod tests {
         let result = executor.execute_rql(&session, invalid_query);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_executor_source_registry_integration() {
+        let backend = SqliteBackend::with_file(":memory:").unwrap();
+        let mut executor = Executor::new(Arc::new(backend));
+
+        // Verify source registry is initialized
+        let registry = executor.source_registry();
+        assert_eq!(registry.list_sources().len(), 0);
+
+        // Verify we can access mutable registry
+        let _registry_mut = executor.source_registry_mut();
+
+        // This test verifies the basic integration is working
+        // Actual multi-source functionality will be tested in NQL execution tests
     }
 }

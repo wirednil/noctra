@@ -5,14 +5,14 @@ use thiserror::Error;
 /// Errores del parser de RQL
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum ParserError {
-    #[error("Error de sintaxis en línea {line}: {message}")]
+    #[error("Error de sintaxis en línea {line}, columna {column}: {message}")]
     SyntaxError {
         line: usize,
         column: usize,
         message: String,
     },
 
-    #[error("Token inesperado '{token}' en línea {line}")]
+    #[error("Token inesperado '{token}' en línea {line}, columna {column}")]
     UnexpectedToken {
         line: usize,
         column: usize,

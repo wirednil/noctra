@@ -1,8 +1,8 @@
 # Noctra - Technical Design Document
 
-> **Version:** 1.0
-> **Date:** 2025-01-05
-> **Status:** Active Development
+> **Version:** 1.1
+> **Date:** 2025-11-09
+> **Status:** Active Development - M4 (NQL Implementation)
 
 ## Table of Contents
 
@@ -1631,6 +1631,299 @@ cp /var/backups/noctra/noctra_20250105_120000.db /var/lib/noctra/data.db
 # Start daemon
 sudo systemctl start noctrad
 ```
+
+---
+
+## 11. NQL - Noctra Query Language (M4)
+
+### 11.1 Overview
+
+**NQL (Noctra Query Language)** extends RQL to support **multi-source data operations**. With NQL, users can query CSV files, SQLite databases, JSON files, and in-memory datasets using the same unified SQL-like syntax.
+
+**Key Features:**
+- Unified query interface across different data sources
+- Automatic CSV delimiter detection and type inference
+- Declarative data transformations (MAP, FILTER)
+- Import/Export between formats (CSV ↔ SQLite ↔ JSON)
+- Multiple active sources with aliasing
+
+### 11.2 DataSource Architecture
+
+```rust
+/// Core trait for all data sources
+pub trait DataSource: Send + Sync + Debug {
+    /// Execute a query against the data source
+    fn query(&self, sql: &str, parameters: &Parameters) -> Result<ResultSet>;
+
+    /// Get schema information (tables/columns)
+    fn schema(&self) -> Result<Vec<TableInfo>>;
+
+    /// Get the type of this data source
+    fn source_type(&self) -> SourceType;
+
+    /// Get the name/identifier of this source
+    fn name(&self) -> &str;
+}
+
+/// Type of data source
+pub enum SourceType {
+    SQLite { path: String },
+    CSV { path: String, delimiter: char, has_header: bool, encoding: String },
+    JSON { path: String },
+    Memory { capacity: usize },
+}
+
+/// Registry of named data sources
+pub struct SourceRegistry {
+    sources: HashMap<String, Box<dyn DataSource>>,
+    active_source: Option<String>,
+}
+```
+
+### 11.3 CSV Backend Implementation
+
+**Features:**
+- **Auto-detection**: Analyzes first 5 rows to detect delimiter (`,` `;` `\t` `|`)
+- **Type Inference**: Samples up to 100 rows to infer column types (BOOLEAN, INTEGER, REAL, TEXT)
+- **Quote Handling**: Proper handling of quoted fields
+- **Encoding**: Support for different encodings (UTF-8, Latin1, etc.)
+
+```rust
+pub struct CsvDataSource {
+    path: PathBuf,
+    name: String,
+    options: CsvOptions,
+    schema: Vec<ColumnInfo>,
+    data: Vec<Vec<Value>>,
+}
+
+impl CsvDataSource {
+    pub fn new<P: AsRef<Path>>(
+        path: P,
+        name: String,
+        options: CsvOptions
+    ) -> Result<Self>;
+
+    fn detect_delimiter(path: &Path) -> Result<char>;
+    fn infer_column_type(data: &[Vec<String>], col_idx: usize) -> String;
+}
+```
+
+### 11.4 NQL Commands
+
+#### Source Management
+
+```sql
+-- Load CSV file
+USE 'clientes.csv' AS csv;
+
+-- Load SQLite database
+USE 'demo.db' AS demo OPTIONS (mode=readonly);
+
+-- List all sources
+SHOW SOURCES;
+
+-- Show tables from specific source
+SHOW TABLES FROM csv;
+
+-- Describe table structure
+DESCRIBE csv.clientes;
+```
+
+#### Data Import/Export
+
+```sql
+-- Import CSV to SQLite
+USE 'demo.db';
+IMPORT 'datos.csv' AS staging;
+INSERT INTO clientes SELECT * FROM staging;
+
+-- Export query results to CSV
+EXPORT (SELECT * FROM empleados WHERE activo = 1)
+TO 'export.csv'
+FORMAT CSV
+OPTIONS (delimiter=';', header=true);
+
+-- Export to JSON
+EXPORT empleados TO 'data.json' FORMAT JSON;
+```
+
+#### Transformations
+
+```sql
+-- Use MAP for column transformations
+USE 'data.csv';
+MAP UPPER(nombre) AS nombre_upper,
+    CONCAT(apellido, ', ', nombre) AS nombre_completo;
+SELECT * FROM data;
+
+-- Use FILTER for row filtering
+USE 'clientes.csv';
+FILTER pais IN ('AR', 'UY', 'CL');
+SELECT * FROM clientes;
+```
+
+#### Session Variables
+
+```sql
+-- Define variables
+LET min_age = 18;
+LET country = 'AR';
+
+-- Use in queries
+SELECT * FROM clientes
+WHERE edad >= :min_age AND pais = :country;
+
+-- Show all variables
+SHOW VARS;
+
+-- Remove variable
+UNSET min_age;
+```
+
+### 11.5 NQL AST Extensions
+
+New statement types added to `RqlStatement`:
+
+```rust
+pub enum RqlStatement {
+    // ... existing SQL statements ...
+
+    // NQL Extensions
+    UseSource {
+        path: String,
+        alias: Option<String>,
+        options: HashMap<String, String>,
+    },
+
+    ShowSources,
+
+    ShowTables {
+        source: Option<String>,
+    },
+
+    ShowVars,
+
+    Describe {
+        source: Option<String>,
+        table: String,
+    },
+
+    Import {
+        file: String,
+        table: String,
+        options: HashMap<String, String>,
+    },
+
+    Export {
+        query: String,
+        file: String,
+        format: ExportFormat,
+        options: HashMap<String, String>,
+    },
+
+    Map {
+        expressions: Vec<MapExpression>,
+    },
+
+    Filter {
+        condition: String,
+    },
+
+    Unset {
+        variables: Vec<String>,
+    },
+}
+
+pub enum ExportFormat {
+    Csv,
+    Json,
+    Xlsx,
+}
+```
+
+### 11.6 Usage Examples
+
+**Example 1: CSV Analysis**
+```sql
+-- Load CSV
+USE 'sales_2024.csv' AS sales;
+
+-- Inspect structure
+DESCRIBE sales.sales_2024;
+
+-- Query with aggregation
+SELECT
+    product,
+    SUM(amount) as total_sales,
+    COUNT(*) as transactions
+FROM sales
+GROUP BY product
+ORDER BY total_sales DESC;
+
+-- Export results
+EXPORT sales TO 'summary.json' FORMAT JSON;
+```
+
+**Example 2: Data Migration**
+```sql
+-- Load legacy CSV
+USE 'legacy_data.csv' AS legacy;
+
+-- Load target database
+USE 'new_system.db' AS target;
+
+-- Migrate data
+IMPORT 'legacy_data.csv' AS staging;
+INSERT INTO target.customers
+SELECT
+    id,
+    UPPER(name) as name,
+    email,
+    CURRENT_DATE as migrated_at
+FROM staging
+WHERE active = true;
+```
+
+**Example 3: Multi-Source JOIN**
+```sql
+-- Load both sources
+USE 'customers.csv' AS csv_customers;
+USE 'orders.db' AS db_orders;
+
+-- Join across sources (requires staging)
+IMPORT 'customers.csv' AS customers_staging;
+
+SELECT
+    c.customer_name,
+    o.order_id,
+    o.total
+FROM customers_staging c
+JOIN db_orders.orders o ON c.customer_id = o.customer_id
+WHERE o.order_date >= '2024-01-01';
+```
+
+### 11.7 Implementation Status
+
+**✅ Completed (M4 - Week 1-2):**
+- DataSource trait and architecture
+- SourceRegistry for managing multiple sources
+- CSV backend with auto-detection
+- Type inference system
+- AST extensions for all NQL commands
+- Test coverage for core functionality
+
+**📋 Pending (M4 - Week 3-6):**
+- NQL parser implementation
+- Executor integration
+- TUI contextual features (show active source)
+- JSON backend
+- Memory backend
+- Advanced CSV options (encoding detection)
+
+**📚 Documentation:**
+- Complete NQL specification: [docs/NQL-SPEC.md](NQL-SPEC.md)
+- Project status with M4 details: [docs/PROJECT_STATUS.md](PROJECT_STATUS.md)
 
 ---
 

@@ -2,7 +2,8 @@
 
 use crate::error::{ParserError, ParserResult};
 use crate::rql_ast::{
-    OutputDestination, OutputFormat, ParameterType, RqlAst, RqlParameter, RqlStatement,
+    ExportFormat, MapExpression, OutputDestination, OutputFormat, ParameterType, RqlAst,
+    RqlParameter, RqlStatement,
 };
 use regex::Regex;
 use std::collections::HashMap;
@@ -75,9 +76,32 @@ impl RqlParser {
     fn parse_line(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
         let upper_line = line.to_uppercase();
 
-        // Detectar comandos RQL
-        if upper_line.starts_with("USE ") {
-            self.parse_use_command(line, line_num)
+        // Detectar comandos NQL (comandos nuevos multi-fuente)
+        if upper_line.starts_with("SHOW SOURCES") {
+            self.parse_show_sources_command(line, line_num)
+        } else if upper_line.starts_with("SHOW TABLES") {
+            self.parse_show_tables_command(line, line_num)
+        } else if upper_line.starts_with("SHOW VARS") {
+            self.parse_show_vars_command(line, line_num)
+        } else if upper_line.starts_with("DESCRIBE ") {
+            self.parse_describe_command(line, line_num)
+        } else if upper_line.starts_with("IMPORT ") {
+            self.parse_import_command(line, line_num)
+        } else if upper_line.starts_with("EXPORT ") {
+            self.parse_export_command(line, line_num)
+        } else if upper_line.starts_with("MAP ") {
+            self.parse_map_command(line, line_num)
+        } else if upper_line.starts_with("FILTER ") {
+            self.parse_filter_command(line, line_num)
+        } else if upper_line.starts_with("UNSET ") {
+            self.parse_unset_command(line, line_num)
+        } else if upper_line.starts_with("USE ") {
+            // Diferenciar entre USE schema y USE 'file' AS alias
+            if line.contains('\'') || line.contains('\"') {
+                self.parse_use_source_command(line, line_num)
+            } else {
+                self.parse_use_command(line, line_num)
+            }
         } else if upper_line.starts_with("LET ") {
             self.parse_let_command(line, line_num)
         } else if upper_line.starts_with("FORM LOAD ") {
@@ -109,17 +133,31 @@ impl RqlParser {
 
     /// Parsear comando LET
     fn parse_let_command(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
-        let parts: Vec<&str> = line.splitn(3, ' ').collect();
-        if parts.len() < 3 {
+        // LET variable = expression
+        let upper_line = line.to_uppercase();
+        if !upper_line.contains(" = ") && !upper_line.contains("=") {
             return Err(ParserError::syntax_error(
                 line_num,
                 1,
-                "LET command requires variable and expression",
+                "LET command requires format: LET variable = expression",
             ));
         }
 
-        let variable = parts[1].to_string();
-        let expression = parts[2].to_string();
+        // Find the equals sign
+        let eq_pos = line.find('=').unwrap();
+        let before_eq = &line[..eq_pos].trim();
+        let after_eq = &line[eq_pos + 1..].trim();
+
+        // Extract variable name (skip "LET")
+        let variable = before_eq
+            .strip_prefix("LET ")
+            .or_else(|| before_eq.strip_prefix("let "))
+            .ok_or_else(|| ParserError::syntax_error(line_num, 1, "LET command malformed"))?
+            .trim()
+            .to_string();
+
+        let expression = after_eq.to_string();
+
         Ok(RqlStatement::Let {
             variable,
             expression,
@@ -128,8 +166,9 @@ impl RqlParser {
 
     /// Parsear comando FORM LOAD
     fn parse_form_load_command(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
+        // FORM LOAD 'file.toml'
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 2 {
+        if parts.len() < 3 {
             return Err(ParserError::syntax_error(
                 line_num,
                 1,
@@ -137,7 +176,8 @@ impl RqlParser {
             ));
         }
 
-        let form_path = parts[1].to_string();
+        // parts[0] = "FORM", parts[1] = "LOAD", parts[2] = file path (keep quotes)
+        let form_path = parts[2].to_string();
         Ok(RqlStatement::FormLoad { form_path })
     }
 
@@ -197,6 +237,387 @@ impl RqlParser {
             destination,
             format,
         })
+    }
+
+    /// Parsear comando USE SOURCE (NQL)
+    /// Sintaxis: USE 'path' [AS alias] [OPTIONS (key=value, ...)]
+    fn parse_use_source_command(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
+        let upper_line = line.to_uppercase();
+
+        // Extraer path (entre comillas)
+        let path = if let Some(start) = line.find('\'') {
+            if let Some(end) = line[start + 1..].find('\'') {
+                line[start + 1..start + 1 + end].to_string()
+            } else {
+                return Err(ParserError::syntax_error(
+                    line_num,
+                    start + 1,
+                    "Unclosed quote in USE command",
+                ));
+            }
+        } else if let Some(start) = line.find('\"') {
+            if let Some(end) = line[start + 1..].find('\"') {
+                line[start + 1..start + 1 + end].to_string()
+            } else {
+                return Err(ParserError::syntax_error(
+                    line_num,
+                    start + 1,
+                    "Unclosed quote in USE command",
+                ));
+            }
+        } else {
+            return Err(ParserError::syntax_error(
+                line_num,
+                1,
+                "USE SOURCE command requires quoted path",
+            ));
+        };
+
+        // Extraer alias (opcional)
+        let alias = if upper_line.contains(" AS ") {
+            let parts: Vec<&str> = line.splitn(2, " AS ").collect();
+            if parts.len() == 2 {
+                let alias_part = parts[1].trim();
+                let alias_end = alias_part
+                    .find(" OPTIONS")
+                    .or_else(|| alias_part.find(';'))
+                    .unwrap_or(alias_part.len());
+                Some(alias_part[..alias_end].trim().to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Extraer options (opcional)
+        let options = if upper_line.contains(" OPTIONS ") {
+            self.parse_options(line, line_num)?
+        } else {
+            HashMap::new()
+        };
+
+        Ok(RqlStatement::UseSource {
+            path,
+            alias,
+            options,
+        })
+    }
+
+    /// Parsear comando SHOW SOURCES
+    fn parse_show_sources_command(
+        &self,
+        _line: &str,
+        _line_num: usize,
+    ) -> ParserResult<RqlStatement> {
+        Ok(RqlStatement::ShowSources)
+    }
+
+    /// Parsear comando SHOW TABLES
+    /// Sintaxis: SHOW TABLES [FROM source]
+    fn parse_show_tables_command(&self, line: &str, _line_num: usize) -> ParserResult<RqlStatement> {
+        let upper_line = line.to_uppercase();
+        let source = if upper_line.contains(" FROM ") {
+            let parts: Vec<&str> = line.splitn(2, " FROM ").collect();
+            if parts.len() == 2 {
+                Some(parts[1].trim().trim_end_matches(';').to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        Ok(RqlStatement::ShowTables { source })
+    }
+
+    /// Parsear comando SHOW VARS
+    fn parse_show_vars_command(
+        &self,
+        _line: &str,
+        _line_num: usize,
+    ) -> ParserResult<RqlStatement> {
+        Ok(RqlStatement::ShowVars)
+    }
+
+    /// Parsear comando DESCRIBE
+    /// Sintaxis: DESCRIBE [source.]table
+    fn parse_describe_command(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 2 {
+            return Err(ParserError::syntax_error(
+                line_num,
+                1,
+                "DESCRIBE command requires table name",
+            ));
+        }
+
+        let table_spec = parts[1].trim_end_matches(';');
+        let (source, table) = if table_spec.contains('.') {
+            let spec_parts: Vec<&str> = table_spec.splitn(2, '.').collect();
+            (Some(spec_parts[0].to_string()), spec_parts[1].to_string())
+        } else {
+            (None, table_spec.to_string())
+        };
+
+        Ok(RqlStatement::Describe { source, table })
+    }
+
+    /// Parsear comando IMPORT
+    /// Sintaxis: IMPORT 'file' AS table [OPTIONS (key=value, ...)]
+    fn parse_import_command(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
+        let upper_line = line.to_uppercase();
+
+        // Extraer file (entre comillas)
+        let file = if let Some(start) = line.find('\'') {
+            if let Some(end) = line[start + 1..].find('\'') {
+                line[start + 1..start + 1 + end].to_string()
+            } else {
+                return Err(ParserError::syntax_error(
+                    line_num,
+                    start + 1,
+                    "Unclosed quote in IMPORT command",
+                ));
+            }
+        } else {
+            return Err(ParserError::syntax_error(
+                line_num,
+                1,
+                "IMPORT command requires quoted file path",
+            ));
+        };
+
+        // Extraer table name
+        let table = if upper_line.contains(" AS ") {
+            let parts: Vec<&str> = line.splitn(2, " AS ").collect();
+            if parts.len() == 2 {
+                let table_part = parts[1].trim();
+                let table_end = table_part
+                    .find(" OPTIONS")
+                    .or_else(|| table_part.find(';'))
+                    .unwrap_or(table_part.len());
+                table_part[..table_end].trim().to_string()
+            } else {
+                return Err(ParserError::syntax_error(
+                    line_num,
+                    1,
+                    "IMPORT command requires AS clause",
+                ));
+            }
+        } else {
+            return Err(ParserError::syntax_error(
+                line_num,
+                1,
+                "IMPORT command requires AS clause",
+            ));
+        };
+
+        // Extraer options (opcional)
+        let options = if upper_line.contains(" OPTIONS ") {
+            self.parse_options(line, line_num)?
+        } else {
+            HashMap::new()
+        };
+
+        Ok(RqlStatement::Import {
+            file,
+            table,
+            options,
+        })
+    }
+
+    /// Parsear comando EXPORT
+    /// Sintaxis: EXPORT query/table TO 'file' FORMAT format [OPTIONS (key=value, ...)]
+    fn parse_export_command(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
+        let upper_line = line.to_uppercase();
+
+        // Extraer query (entre EXPORT y TO)
+        let query = if let Some(to_pos) = upper_line.find(" TO ") {
+            line[7..to_pos].trim().to_string() // 7 = len("EXPORT ")
+        } else {
+            return Err(ParserError::syntax_error(
+                line_num,
+                1,
+                "EXPORT command requires TO clause",
+            ));
+        };
+
+        // Extraer file (entre comillas después de TO)
+        let file = if let Some(to_pos) = line.to_uppercase().find(" TO ") {
+            let after_to = &line[to_pos + 4..]; // 4 = len(" TO ")
+            if let Some(start) = after_to.find('\'') {
+                if let Some(end) = after_to[start + 1..].find('\'') {
+                    after_to[start + 1..start + 1 + end].to_string()
+                } else {
+                    return Err(ParserError::syntax_error(
+                        line_num,
+                        1,
+                        "Unclosed quote in EXPORT command",
+                    ));
+                }
+            } else {
+                return Err(ParserError::syntax_error(
+                    line_num,
+                    1,
+                    "EXPORT TO requires quoted file path",
+                ));
+            }
+        } else {
+            return Err(ParserError::syntax_error(
+                line_num,
+                1,
+                "EXPORT command requires TO clause",
+            ));
+        };
+
+        // Extraer format
+        let format = if upper_line.contains(" FORMAT CSV") {
+            ExportFormat::Csv
+        } else if upper_line.contains(" FORMAT JSON") {
+            ExportFormat::Json
+        } else if upper_line.contains(" FORMAT XLSX") {
+            ExportFormat::Xlsx
+        } else {
+            return Err(ParserError::syntax_error(
+                line_num,
+                1,
+                "EXPORT command requires FORMAT clause (CSV, JSON, or XLSX)",
+            ));
+        };
+
+        // Extraer options (opcional)
+        let options = if upper_line.contains(" OPTIONS ") {
+            self.parse_options(line, line_num)?
+        } else {
+            HashMap::new()
+        };
+
+        Ok(RqlStatement::Export {
+            query,
+            file,
+            format,
+            options,
+        })
+    }
+
+    /// Parsear comando MAP
+    /// Sintaxis: MAP expression1 [AS alias1], expression2 [AS alias2], ...
+    fn parse_map_command(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
+        let map_part = line[4..].trim().trim_end_matches(';'); // 4 = len("MAP ")
+
+        let mut expressions = Vec::new();
+        for expr_str in map_part.split(',') {
+            let trimmed = expr_str.trim();
+            let upper_trimmed = trimmed.to_uppercase();
+
+            let (expression, alias) = if upper_trimmed.contains(" AS ") {
+                let parts: Vec<&str> = trimmed.splitn(2, " AS ").collect();
+                if parts.len() == 2 {
+                    (parts[0].trim().to_string(), Some(parts[1].trim().to_string()))
+                } else {
+                    (trimmed.to_string(), None)
+                }
+            } else {
+                (trimmed.to_string(), None)
+            };
+
+            if expression.is_empty() {
+                return Err(ParserError::syntax_error(
+                    line_num,
+                    1,
+                    "MAP command requires at least one expression",
+                ));
+            }
+
+            expressions.push(MapExpression { expression, alias });
+        }
+
+        if expressions.is_empty() {
+            return Err(ParserError::syntax_error(
+                line_num,
+                1,
+                "MAP command requires at least one expression",
+            ));
+        }
+
+        Ok(RqlStatement::Map { expressions })
+    }
+
+    /// Parsear comando FILTER
+    /// Sintaxis: FILTER condition
+    fn parse_filter_command(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
+        let condition = line[7..].trim().trim_end_matches(';').to_string(); // 7 = len("FILTER ")
+
+        if condition.is_empty() {
+            return Err(ParserError::syntax_error(
+                line_num,
+                1,
+                "FILTER command requires condition",
+            ));
+        }
+
+        Ok(RqlStatement::Filter { condition })
+    }
+
+    /// Parsear comando UNSET
+    /// Sintaxis: UNSET variable1, variable2, ...
+    fn parse_unset_command(&self, line: &str, line_num: usize) -> ParserResult<RqlStatement> {
+        let vars_part = line[6..].trim().trim_end_matches(';'); // 6 = len("UNSET ")
+
+        let variables: Vec<String> = vars_part
+            .split(',')
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .collect();
+
+        if variables.is_empty() {
+            return Err(ParserError::syntax_error(
+                line_num,
+                1,
+                "UNSET command requires at least one variable",
+            ));
+        }
+
+        Ok(RqlStatement::Unset { variables })
+    }
+
+    /// Parsear sección OPTIONS
+    /// Sintaxis: OPTIONS (key1=value1, key2=value2, ...)
+    fn parse_options(&self, line: &str, line_num: usize) -> ParserResult<HashMap<String, String>> {
+        let mut options = HashMap::new();
+
+        if let Some(options_start) = line.to_uppercase().find(" OPTIONS (") {
+            let after_options = &line[options_start + 10..]; // 10 = len(" OPTIONS (")
+            if let Some(options_end) = after_options.find(')') {
+                let options_str = &after_options[..options_end];
+                for opt_pair in options_str.split(',') {
+                    let trimmed = opt_pair.trim();
+                    // Skip empty parts (can happen with trailing commas or comma values)
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    if let Some(eq_pos) = trimmed.find('=') {
+                        let key = trimmed[..eq_pos].trim().to_string();
+                        let value = trimmed[eq_pos + 1..].trim().to_string();
+                        options.insert(key, value);
+                    } else {
+                        return Err(ParserError::syntax_error(
+                            line_num,
+                            1,
+                            "Invalid OPTIONS format, expected key=value",
+                        ));
+                    }
+                }
+            } else {
+                return Err(ParserError::syntax_error(
+                    line_num,
+                    1,
+                    "Unclosed OPTIONS parenthesis",
+                ));
+            }
+        }
+
+        Ok(options)
     }
 
     /// Parsear statement SQL
@@ -383,6 +804,9 @@ impl RqlProcessor {
         // Validar parámetros duplicados
         self.validate_duplicate_parameters(ast)?;
 
+        // Validar comandos NQL
+        self.validate_nql_commands(ast)?;
+
         // Optimizar statements
         self.optimize_statements(ast)?;
 
@@ -408,6 +832,146 @@ impl RqlProcessor {
         }
 
         Ok(())
+    }
+
+    /// Validar comandos NQL específicos
+    fn validate_nql_commands(&self, ast: &mut RqlAst) -> ParserResult<()> {
+        use std::collections::HashSet;
+
+        let mut source_aliases = HashSet::new();
+
+        for statement in &ast.statements {
+            match statement {
+                RqlStatement::UseSource { path, alias, .. } => {
+                    // Validar que el path no esté vacío
+                    if path.is_empty() {
+                        ast.metadata.warnings.push(
+                            "USE SOURCE: Empty path provided".to_string()
+                        );
+                    }
+
+                    // Validar alias duplicado
+                    if let Some(alias_name) = alias {
+                        if !source_aliases.insert(alias_name.clone()) {
+                            ast.metadata.warnings.push(format!(
+                                "USE SOURCE: Duplicate alias '{}'",
+                                alias_name
+                            ));
+                        }
+
+                        // Validar que el alias sea un identificador válido
+                        if !Self::is_valid_identifier(alias_name) {
+                            ast.metadata.warnings.push(format!(
+                                "USE SOURCE: Invalid alias '{}' (must be alphanumeric)",
+                                alias_name
+                            ));
+                        }
+                    }
+                }
+
+                RqlStatement::Import { file, table, .. } => {
+                    // Validar que el archivo no esté vacío
+                    if file.is_empty() {
+                        ast.metadata.warnings.push(
+                            "IMPORT: Empty file path provided".to_string()
+                        );
+                    }
+
+                    // Validar que el nombre de tabla sea válido
+                    if table.is_empty() || !Self::is_valid_identifier(table) {
+                        ast.metadata.warnings.push(format!(
+                            "IMPORT: Invalid table name '{}'",
+                            table
+                        ));
+                    }
+                }
+
+                RqlStatement::Export { query, file, .. } => {
+                    // Validar que la query no esté vacía
+                    if query.is_empty() {
+                        ast.metadata.warnings.push(
+                            "EXPORT: Empty query/table provided".to_string()
+                        );
+                    }
+
+                    // Validar que el archivo no esté vacío
+                    if file.is_empty() {
+                        ast.metadata.warnings.push(
+                            "EXPORT: Empty file path provided".to_string()
+                        );
+                    }
+                }
+
+                RqlStatement::Describe { table, .. } => {
+                    // Validar que el nombre de tabla sea válido
+                    if table.is_empty() || !Self::is_valid_identifier(table) {
+                        ast.metadata.warnings.push(format!(
+                            "DESCRIBE: Invalid table name '{}'",
+                            table
+                        ));
+                    }
+                }
+
+                RqlStatement::Unset { variables } => {
+                    // Validar que haya al menos una variable
+                    if variables.is_empty() {
+                        ast.metadata.warnings.push(
+                            "UNSET: No variables specified".to_string()
+                        );
+                    }
+
+                    // Validar que las variables sean identificadores válidos
+                    for var in variables {
+                        if !Self::is_valid_identifier(var) {
+                            ast.metadata.warnings.push(format!(
+                                "UNSET: Invalid variable name '{}'",
+                                var
+                            ));
+                        }
+                    }
+                }
+
+                RqlStatement::Map { expressions } => {
+                    // Validar que haya al menos una expresión
+                    if expressions.is_empty() {
+                        ast.metadata.warnings.push(
+                            "MAP: No expressions provided".to_string()
+                        );
+                    }
+                }
+
+                RqlStatement::Filter { condition } => {
+                    // Validar que la condición no esté vacía
+                    if condition.trim().is_empty() {
+                        ast.metadata.warnings.push(
+                            "FILTER: Empty condition provided".to_string()
+                        );
+                    }
+                }
+
+                _ => {
+                    // Otros statements no requieren validación NQL específica
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validar si un string es un identificador válido
+    fn is_valid_identifier(name: &str) -> bool {
+        if name.is_empty() {
+            return false;
+        }
+
+        // Primer carácter debe ser letra o underscore
+        let first_char = name.chars().next().unwrap();
+        if !first_char.is_alphabetic() && first_char != '_' {
+            return false;
+        }
+
+        // Resto de caracteres deben ser alfanuméricos o underscore
+        name.chars().all(|c| c.is_alphanumeric() || c == '_')
     }
 
     /// Optimizar statements
