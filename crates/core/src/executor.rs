@@ -285,6 +285,12 @@ impl Executor {
     pub fn execute_rql(&self, session: &Session, rql_query: RqlQuery) -> Result<ResultSet> {
         let sql = self.process_templates(&rql_query.sql, session)?;
 
+        // Si hay una fuente activa, ejecutar la query en esa fuente
+        if let Some(active_source) = self.source_registry.active() {
+            return active_source.query(&sql, &rql_query.parameters);
+        }
+
+        // Si no hay fuente activa, usar el backend SQLite
         // Detectar si es un statement (INSERT/UPDATE/DELETE/CREATE/DROP/ALTER) o query (SELECT)
         let trimmed = sql.trim().to_uppercase();
         let is_statement = trimmed.starts_with("INSERT")
