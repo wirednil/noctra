@@ -26,6 +26,25 @@ Noctra es un entorno SQL interactivo moderno escrito en Rust con filosofía 4GL,
 **Clippy:** 0 warnings
 **Estado:** ✅ **Listo para M4**
 
+### 🆕 Extensión Conceptual: NQL (Noctra Query Language)
+
+**Visión M4+**: Noctra evolucionará de un entorno SQL puro a un **sistema de consultas multi-fuente** mediante NQL, permitiendo:
+
+- 📄 **Consultar archivos CSV** como si fueran bases de datos
+- 🔄 **Importar/Exportar** entre diferentes formatos (CSV ↔ SQLite ↔ JSON)
+- 🎯 **Sintaxis unificada** para todas las fuentes de datos
+- 🛠️ **Transformaciones declarativas** con MAP y FILTER
+- 📊 **Administración de múltiples fuentes** simultáneas
+
+**Ejemplo de uso futuro:**
+```sql
+USE 'clientes.csv' AS csv;          -- Cargar CSV
+SELECT * FROM csv WHERE pais = 'AR'; -- Consultar como SQL
+EXPORT csv TO 'filtrado.json';      -- Exportar a JSON
+```
+
+Ver [M4.10 - NQL](#410-nql---noctra-query-language-extensión-conceptual) para detalles completos.
+
 ---
 
 ## ✅ Milestone 0 - Foundation [COMPLETADO]
@@ -379,7 +398,231 @@ Completar todas las funcionalidades avanzadas del TUI y agregar soporte para car
 - [ ] Ejecución async de queries
 - [ ] Cancelación de queries largas (F8)
 
-**Estimado:** 3-4 semanas
+#### 4.10 NQL - Noctra Query Language (Extensión Conceptual)
+
+**Objetivo:** Extender RQL con un dialecto unificado que permita trabajar con múltiples fuentes de datos (SQLite, CSV, archivos planos) usando la misma sintaxis.
+
+**Visión:** El usuario debe poder consultar una base de datos SQLite, un archivo CSV o un dataset en memoria con los mismos comandos, sin distinguir el origen.
+
+##### A. Administración de Fuentes de Datos
+
+- [ ] **`USE <path> [AS alias];`** - Cambiar o cargar fuente de datos (BD o archivo)
+  ```sql
+  USE 'clientes.csv' AS csv;
+  USE 'demo.db' AS demo;
+  ```
+
+- [ ] **`SHOW SOURCES;`** - Listar todas las fuentes disponibles
+  ```
+  +----------+-----------------+
+  | Alias    | Tipo            |
+  |----------|-----------------|
+  | demo     | sqlite          |
+  | csv      | csv (archivo)   |
+  +----------+-----------------+
+  ```
+
+- [ ] **Soporte para fuentes CSV**
+  - Detector automático de delimitadores (`,` `;` `\t`)
+  - Inferencia de tipos de columnas
+  - Manejo de headers y encoding
+
+##### B. Inspección y Metadatos
+
+- [ ] **`SHOW TABLES;`** - Listar tablas o datasets de la fuente actual
+- [ ] **`SHOW <table>;`** - Describir columnas/campos (nombre, tipo, tamaño, nulos)
+  ```sql
+  SHOW demo.provin;
+  SHOW csv.clientes;
+  ```
+
+- [ ] **`DESCRIBE <source>.<table>;`** - Alias para SHOW con más detalle
+
+##### C. Operaciones de Importación/Exportación
+
+- [ ] **`IMPORT <archivo> AS <tabla>;`** - Cargar dataset plano a fuente actual
+  ```sql
+  IMPORT 'ventas.csv' AS ventas;
+  IMPORT 'datos.json' AS json_data;
+  ```
+
+- [ ] **`EXPORT <tabla> TO <archivo>;`** - Exportar datos a CSV/JSON
+  ```sql
+  EXPORT empleados TO 'export.csv';
+  EXPORT resultados TO 'output.json';
+  ```
+
+- [ ] **Soporte para formatos**
+  - CSV (con delimitador configurable)
+  - JSON (pretty y compacto)
+  - XLSX (opcional, Milestone 5)
+
+##### D. Manipulación Declarativa y Transformación
+
+- [ ] **`MAP <expresión>`** - Transformar datos en memoria
+  ```sql
+  MAP UPPER(nombre);
+  MAP CONCAT(apellido, ', ', nombre);
+  ```
+
+- [ ] **`FILTER <condición>`** - Filtrar filas sin WHERE SQL
+  ```sql
+  FILTER edad > 30;
+  FILTER pais IN ('AR', 'UY', 'CL');
+  ```
+
+- [ ] **Pipeline de transformaciones**
+  ```sql
+  USE 'datos.csv' AS src;
+  FILTER edad > 25;
+  MAP UPPER(nombre);
+  SELECT * FROM src;
+  ```
+
+##### E. Sesiones, Variables y Entorno
+
+- [ ] **`LET <variable> = <expresión>;`** - Definir variable local
+  ```sql
+  LET pais = 'AR';
+  LET min_edad = 25;
+  SELECT * FROM clientes WHERE country = $pais AND edad >= $min_edad;
+  ```
+
+- [ ] **`SHOW VARS;`** - Mostrar variables definidas
+- [ ] **`UNSET <variable>;`** - Eliminar variable de sesión
+- [ ] **Persistencia de variables** - Guardar/cargar variables entre sesiones
+
+##### F. Semántica de Ejecución Unificada
+
+**Concepto clave:** Toda fuente es ejecutable mediante un conjunto uniforme de operaciones:
+- Lectura
+- Filtrado
+- Transformación
+- Renderizado
+
+**Ejemplo de uso unificado:**
+```sql
+-- Trabajar con CSV como si fuera una BD
+USE 'clientes.csv' AS csv;
+SELECT nombre, pais FROM csv WHERE pais = 'AR';
+
+-- Cambiar a SQLite
+USE 'demo.db' AS db;
+SELECT * FROM db.empleados WHERE dept = 'IT';
+
+-- Importar CSV a SQLite
+USE 'demo.db';
+IMPORT 'nuevos.csv' AS temp_import;
+INSERT INTO empleados SELECT * FROM temp_import;
+```
+
+**Implementación interna:**
+- Parser debe distinguir comandos NQL de SQL puro
+- Executor debe tener abstracción `DataSource` trait:
+  ```rust
+  trait DataSource {
+      fn query(&self, sql: &str) -> Result<ResultSet>;
+      fn schema(&self) -> Result<Vec<Table>>;
+      fn source_type(&self) -> SourceType;
+  }
+
+  enum SourceType {
+      SQLite,
+      CSV { delimiter: char, has_header: bool },
+      JSON,
+      Memory,
+  }
+  ```
+
+##### G. TUI Contextual
+
+- [ ] **Header contextual** - Mostrar fuente actual
+  ```
+  ──( RESULTADO ) SQL Noctra 0.1.0 ────── Fuente: csv://clientes.csv ───
+  ──( COMANDO ) SQL Noctra 0.1.0 ──────── Fuente: sqlite://demo.db ─────
+  ```
+
+- [ ] **Estado de sesión visible**
+  - Indicar tipo de fuente (SQL vs CSV)
+  - Mostrar número de filas y columnas en resultados
+  - Número de fuentes activas
+
+- [ ] **Comandos dinámicos mejorados**
+  - `Alt+R` carga SQL o CSV indistintamente
+  - `Alt+W` exporta según formato seleccionado
+  - `F5` ejecuta NQL o SQL según contexto
+
+##### H. Compatibilidad y Prioridades
+
+**Reglas de precedencia sintáctica:**
+
+| Tipo de comando | Prioridad | Ejemplo                    | Comportamiento                       |
+|-----------------|-----------|----------------------------|--------------------------------------|
+| SQL puro        | Alta      | `SELECT * FROM users;`     | Ejecuta en fuente activa (SQLite)   |
+| NQL puro        | Media     | `SHOW demo;`               | Describe esquema o dataset          |
+| Híbrido         | Baja      | `USE file.csv; SELECT ...` | Interpreta USE → cambia contexto    |
+
+**Compatibilidad:**
+- [x] SQL estándar (100% compatible)
+- [ ] NQL extensions (nuevos comandos)
+- [ ] Retrocompatibilidad total con RQL actual
+
+##### I. Casos de Uso Completos
+
+**Caso 1: Análisis de CSV**
+```sql
+USE 'ventas_2024.csv' AS ventas;
+SHOW ventas;  -- Ver columnas
+SELECT producto, SUM(cantidad) as total
+FROM ventas
+GROUP BY producto
+ORDER BY total DESC;
+EXPORT ventas TO 'resumen.json';
+```
+
+**Caso 2: Migración de datos**
+```sql
+USE 'legacy.csv' AS legacy;
+USE 'new.db' AS target;
+IMPORT 'legacy.csv' AS staging;
+INSERT INTO target.clientes
+  SELECT id, nombre, UPPER(pais) FROM staging WHERE active = 1;
+```
+
+**Caso 3: Transformación y filtrado**
+```sql
+USE 'clientes.csv';
+LET min_age = 18;
+FILTER edad >= $min_age;
+MAP TRIM(nombre);
+SELECT * FROM clientes WHERE pais IN ('AR', 'UY');
+```
+
+##### J. Arquitectura Técnica Requerida
+
+**Nuevos componentes:**
+```
+crates/
+├── core/
+│   └── src/
+│       ├── datasource.rs      # Trait DataSource + implementaciones
+│       ├── csv_backend.rs     # Backend para CSV
+│       └── memory_backend.rs  # Backend en memoria
+├── parser/
+│   └── src/
+│       ├── nql_parser.rs      # Parser NQL extensions
+│       └── nql_ast.rs         # AST para comandos NQL
+└── cli/
+    └── src/
+        └── nql_executor.rs    # Executor unificado NQL+SQL
+```
+
+**Dependencias nuevas:**
+- `csv` crate - Parser CSV
+- `serde_json` - Export JSON (ya incluido)
+- `encoding_rs` - Detección de encoding
+
+**Estimado M4 con NQL:** 4-6 semanas
 
 ---
 
@@ -460,15 +703,27 @@ Preparar Noctra para uso en producción con optimizaciones, documentación y emp
 2025
 ├── Enero - Febrero
 │   ├── ✅ M0: Foundation
-│   ├── ✅ M1: Core + Parser
+│   ├── ✅ M1: Core + Parser (RQL)
 │   └── ✅ M2: Forms + TUI
 │
 ├── Marzo - Abril
 │   ├── ✅ M3: Backend Integration (Completado Nov 2025)
-│   └── 📋 M4: Advanced Features (SIGUIENTE)
+│   └── 📋 M4: Advanced Features + NQL (SIGUIENTE)
+│       ├── Editor avanzado
+│       ├── File operations
+│       ├── Help system
+│       ├── NQL - Noctra Query Language ⭐ NUEVO
+│       │   ├── Soporte CSV
+│       │   ├── Múltiples fuentes de datos
+│       │   ├── Comandos administrativos (USE, SHOW, IMPORT, EXPORT)
+│       │   └── Transformaciones (MAP, FILTER)
+│       └── Performance optimizations
 │
 └── Mayo - Junio
     └── 📋 M5: Production Ready
+        ├── PostgreSQL/MySQL backends
+        ├── Packaging y distribución
+        └── Documentación completa
 ```
 
 ---
@@ -554,15 +809,21 @@ noctra tui --schema demo
 
 ### 🎯 Siguiente Acción Recomendada
 
-**Comenzar M4** - Agregar características avanzadas del TUI y funcionalidades empresariales.
+**Comenzar M4** - Agregar características avanzadas del TUI y **NQL (Noctra Query Language)** para soporte multi-fuente.
 
 **Prioridades M4:**
-1. File operations (Alt+R/W)
-2. Help system (F1)
-3. History management
-4. Data export (CSV/JSON)
-5. Schema management
-6. Transaction support
+1. **NQL - Soporte CSV y múltiples fuentes** ⭐ NUEVO
+   - Comandos administrativos (USE, SHOW SOURCES, IMPORT, EXPORT)
+   - Backend CSV con detección automática
+   - Transformaciones (MAP, FILTER)
+   - Semántica unificada de ejecución
+2. File operations (Alt+R/W)
+3. Help system (F1)
+4. History management persistente
+5. Data export/import mejorado
+6. Schema management
+7. Transaction support
+8. TUI contextual (mostrar fuente actual)
 
 ---
 
