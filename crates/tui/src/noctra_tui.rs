@@ -671,8 +671,26 @@ impl<'a> NoctraTui<'a> {
                         RqlStatement::UseSource { path, alias, options } => {
                             self.handle_use_source(path, alias.as_deref(), options)?;
                         }
+                        RqlStatement::ShowSources => {
+                            self.handle_show_sources()?;
+                        }
+                        RqlStatement::ShowTables { source } => {
+                            self.handle_show_tables(source.as_deref())?;
+                        }
+                        RqlStatement::ShowVars => {
+                            self.handle_show_vars()?;
+                        }
+                        RqlStatement::Describe { source, table } => {
+                            self.handle_describe(source.as_deref(), table)?;
+                        }
+                        RqlStatement::Let { variable, expression } => {
+                            self.handle_let(variable, expression)?;
+                        }
+                        RqlStatement::Unset { variables } => {
+                            self.handle_unset(variables)?;
+                        }
                         _ => {
-                            self.show_error_dialog("⚠️ Comando no soportado en TUI todavía");
+                            self.show_error_dialog(&format!("⚠️ Comando no implementado: {:?}", statement.statement_type()));
                         }
                     }
                 }
@@ -749,6 +767,150 @@ impl<'a> NoctraTui<'a> {
         self.dialog_options = vec!["OK".to_string()];
         self.dialog_selected = 0;
         self.mode = UiMode::Dialog;
+    }
+
+    /// Manejar comando SHOW SOURCES
+    fn handle_show_sources(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let sources = self.executor.source_registry().list_sources();
+
+        let mut message = String::from("📊 Fuentes disponibles:\n\n");
+        if sources.is_empty() {
+            message.push_str("ℹ️  No hay fuentes registradas");
+        } else {
+            for (alias, source_type) in sources {
+                message.push_str(&format!("  • {} ({}) - {}\n", alias, source_type.type_name(), source_type.display_path()));
+            }
+        }
+
+        self.show_info_dialog(&message);
+        Ok(())
+    }
+
+    /// Manejar comando SHOW TABLES
+    fn handle_show_tables(&mut self, source: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        let mut message = String::new();
+
+        if let Some(source_name) = source {
+            // Mostrar tablas de una fuente específica
+            if let Some(data_source) = self.executor.source_registry().get(source_name) {
+                match data_source.schema() {
+                    Ok(tables) => {
+                        if tables.is_empty() {
+                            message.push_str(&format!("ℹ️  No hay tablas en '{}'", source_name));
+                        } else {
+                            message.push_str(&format!("📋 Tablas en '{}':\n\n", source_name));
+                            for table in tables {
+                                message.push_str(&format!("  • {} ({} columnas)\n", table.name, table.columns.len()));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        message.push_str(&format!("❌ Error obteniendo schema: {}", e));
+                    }
+                }
+            } else {
+                message.push_str(&format!("❌ Fuente '{}' no encontrada", source_name));
+            }
+        } else {
+            // Mostrar todas las tablas de todas las fuentes
+            let sources = self.executor.source_registry().list_sources();
+            if sources.is_empty() {
+                message.push_str("ℹ️  No hay fuentes registradas");
+            } else {
+                for (alias, _) in sources {
+                    if let Some(data_source) = self.executor.source_registry().get(&alias) {
+                        if let Ok(tables) = data_source.schema() {
+                            if !tables.is_empty() {
+                                message.push_str(&format!("📋 Tablas en '{}':\n", alias));
+                                for table in tables {
+                                    message.push_str(&format!("  • {} ({} columnas)\n", table.name, table.columns.len()));
+                                }
+                                message.push('\n');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        self.show_info_dialog(&message);
+        Ok(())
+    }
+
+    /// Manejar comando SHOW VARS
+    fn handle_show_vars(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let vars = self.session.list_variables();
+
+        let mut message = String::from("🔧 Variables de sesión:\n\n");
+        if vars.is_empty() {
+            message.push_str("ℹ️  No hay variables de sesión definidas");
+        } else {
+            for (name, value) in vars {
+                message.push_str(&format!("  {} = {}\n", name, value));
+            }
+        }
+
+        self.show_info_dialog(&message);
+        Ok(())
+    }
+
+    /// Manejar comando DESCRIBE
+    fn handle_describe(&mut self, source: Option<&str>, table: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let mut message = String::new();
+
+        if let Some(source_name) = source {
+            // Describir tabla de una fuente específica
+            if let Some(data_source) = self.executor.source_registry().get(source_name) {
+                match data_source.schema() {
+                    Ok(tables) => {
+                        if let Some(table_info) = tables.iter().find(|t| t.name == table) {
+                            message.push_str(&format!("📊 Estructura de {}.{}:\n\n", source_name, table));
+                            message.push_str("  Columnas:\n");
+                            for col in &table_info.columns {
+                                message.push_str(&format!("    • {} ({})\n", col.name, col.data_type));
+                            }
+                            if let Some(row_count) = table_info.row_count {
+                                message.push_str(&format!("\n  Filas: {}", row_count));
+                            }
+                        } else {
+                            message.push_str(&format!("❌ Tabla '{}' no encontrada en '{}'", table, source_name));
+                        }
+                    }
+                    Err(e) => {
+                        message.push_str(&format!("❌ Error obteniendo schema: {}", e));
+                    }
+                }
+            } else {
+                message.push_str(&format!("❌ Fuente '{}' no encontrada", source_name));
+            }
+        } else {
+            message.push_str("❌ DESCRIBE requiere especificar la fuente: DESCRIBE source.table");
+        }
+
+        self.show_info_dialog(&message);
+        Ok(())
+    }
+
+    /// Manejar comando LET
+    fn handle_let(&mut self, variable: &str, expression: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Evaluar la expresión (por ahora, simplemente tomar el valor literal)
+        let value = expression.trim_matches('\'').trim_matches('"');
+        self.session.set_variable(variable.to_string(), value.to_string());
+
+        self.show_info_dialog(&format!("✅ Variable '{}' = '{}'", variable, value));
+        Ok(())
+    }
+
+    /// Manejar comando UNSET
+    fn handle_unset(&mut self, variables: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+        let mut message = String::from("✅ Variables eliminadas:\n\n");
+        for var in variables {
+            self.session.remove_variable(var);
+            message.push_str(&format!("  • {}\n", var));
+        }
+
+        self.show_info_dialog(&message);
+        Ok(())
     }
 
     /// Limpiar el editor de comandos
