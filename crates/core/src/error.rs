@@ -43,6 +43,12 @@ impl From<rusqlite::Error> for NoctraError {
     }
 }
 
+impl From<std::io::Error> for NoctraError {
+    fn from(error: std::io::Error) -> Self {
+        NoctraError::Io(format!("I/O error: {}", error))
+    }
+}
+
 impl NoctraError {
     /// Crear error de base de datos
     pub fn database<T: fmt::Display>(msg: T) -> Self {
