@@ -6,6 +6,7 @@
 - **[Design Document](DESIGN.md)** - Arquitectura técnica detallada
 - **[Roadmap](ROADMAP.md)** - Milestones y timeline de desarrollo
 - **[RQL Extensions](RQL-EXTENSIONS.md)** - Referencia completa del lenguaje
+- **[NQL Specification](NQL-SPEC.md)** - 🆕 Noctra Query Language (multi-fuente)
 - **[FDL2 Specification](FDL2-SPEC.md)** - Lenguaje de definición de formularios
 - **[API Reference](API-REFERENCE.md)** - API de programación
 - **[Contributing](../CONTRIBUTING.md)** - Cómo contribuir al proyecto

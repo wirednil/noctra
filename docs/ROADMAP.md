@@ -1,14 +1,14 @@
 # Noctra Development Roadmap
 
-> **Version:** 1.0
-> **Last Updated:** 2025-01-05
-> **Status:** Active Development
+> **Version:** 1.1
+> **Last Updated:** 2025-11-09
+> **Status:** Active Development - M4 (NQL Implementation)
 
 ## Overview
 
 This document outlines the development roadmap for Noctra, from initial setup through production-ready release. The roadmap is organized into milestones with clear deliverables, timelines, and success criteria.
 
-**Current Status:** Milestone 0 (Setup & Foundation)
+**Current Status:** Milestone 4 - Advanced Features (NQL Implementation in Progress)
 
 ---
 
@@ -30,27 +30,32 @@ This document outlines the development roadmap for Noctra, from initial setup th
 
 ```
 Milestone 0 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ [████████████] 100%
-           └─ Foundation & Setup (1 week)
+           └─ Foundation & Setup                     ✅ COMPLETADO
 
-Milestone 1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ [░░░░░░░░░░░░]   0%
-           └─ Core MVP (3 weeks)                     ETA: 2025-02-15
+Milestone 1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ [████████████] 100%
+           └─ Core MVP (RQL Parser + Executor)       ✅ COMPLETADO
 
-Milestone 2 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ [░░░░░░░░░░░░]   0%
-           └─ Forms & TUI (3 weeks)                   ETA: 2025-03-08
+Milestone 2 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ [████████████] 100%
+           └─ Forms & TUI (FDL2 + NWM)               ✅ COMPLETADO
 
-Milestone 3 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ [░░░░░░░░░░░░]   0%
-           └─ Advanced Features (2 weeks)            ETA: 2025-03-22
+Milestone 3 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ [████████████] 100%
+           └─ Backend Integration                    ✅ COMPLETADO
 
-Milestone 4 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ [░░░░░░░░░░░░]   0%
-           └─ Production Ready (3 weeks)             ETA: 2025-04-12
+Milestone 4 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ [███░░░░░░░░░]  25%
+           └─ Advanced Features + NQL                🚧 EN PROGRESO
+              ├─ DataSource trait                    ✅ Implementado
+              ├─ CSV Backend                         ✅ Implementado
+              ├─ AST Extensions (NQL)                ✅ Implementado
+              ├─ Parser NQL                          📋 Pendiente
+              └─ TUI Integration                     📋 Pendiente
 
 Milestone 5 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ [░░░░░░░░░░░░]   0%
-           └─ Extended Capabilities (ongoing)        ETA: 2025-06-01
+           └─ Production Ready                       📋 Planificado
 ```
 
-**MVP Release:** End of Milestone 1 (February 2025)
-**v0.1.0 Release:** End of Milestone 4 (April 2025)
-**v1.0.0 Release:** End of Milestone 5 (June 2025)
+**MVP Release:** ✅ Completado (M1-M3)
+**v0.1.0 Release:** 🚧 En progreso (M4)
+**v1.0.0 Release:** 📋 Planificado (M5)
 
 ---
 
@@ -105,8 +110,8 @@ Establish project foundation with proper structure, build system, and documentat
 ## Milestone 1: Core MVP
 
 **Duration:** 3 weeks
-**Status:** 🚧 In Progress
-**Target Date:** 2025-02-15
+**Status:** ✅ Complete (100%)
+**Completion Date:** 2025-08-15
 
 ### Objectives
 
@@ -285,8 +290,8 @@ noctra> .exit
 ## Milestone 2: Forms & TUI
 
 **Duration:** 3 weeks
-**Status:** ⏸️ Not Started
-**Target Date:** 2025-03-08
+**Status:** ✅ Complete (100%)
+**Completion Date:** 2025-09-20
 
 ### Objectives
 
@@ -429,15 +434,15 @@ noctra> FORM LOAD 'examples/employees.toml';
 
 ---
 
-## Milestone 3: Advanced Features
+## Milestone 3: Backend Integration
 
 **Duration:** 2 weeks
-**Status:** ⏸️ Not Started
-**Target Date:** 2025-03-22
+**Status:** ✅ Complete (100%)
+**Completion Date:** 2025-10-30
 
 ### Objectives
 
-Add advanced RQL features, multi-backend support, and enhanced functionality.
+Integrate TUI with backend, add advanced RQL features, and enhance functionality.
 
 ### Week 1: RQL Extensions
 
@@ -584,19 +589,86 @@ PostgreSQL 15.1 on x86_64-linux-gnu
 
 ---
 
-## Milestone 4: Production Ready
+## Milestone 4: Advanced Features + NQL
 
-**Duration:** 3 weeks
-**Status:** ⏸️ Not Started
-**Target Date:** 2025-04-12
+**Duration:** 4-6 weeks
+**Status:** 🚧 In Progress (25%)
+**Start Date:** 2025-11-01
+**Target Date:** 2025-12-15
 
 ### Objectives
 
-Production hardening, security, performance optimization, and comprehensive documentation.
+Implement NQL (Noctra Query Language) for multi-source data support, add advanced features, and enhance TUI capabilities.
 
-### Week 1: Security & Validation
+### NQL Foundation (Week 1-2) ✅ COMPLETADO
 
-#### Tasks
+**Implemented Components:**
+
+- [x] **DataSource trait abstraction** (`datasource.rs`)
+  - Unified interface for multiple data sources
+  - SourceRegistry for managing active sources
+  - SourceType enum (SQLite, CSV, JSON, Memory)
+
+- [x] **CSV Backend** (`csv_backend.rs`)
+  - Auto-detection of delimiters (`,` `;` `\t` `|`)
+  - Type inference (INTEGER, REAL, BOOLEAN, TEXT)
+  - Quote handling and encoding support
+
+- [x] **RQL AST Extensions** (`rql_ast.rs`)
+  - 10 new NQL command types:
+    - `UseSource` - Load data sources with options
+    - `ShowSources` - List all active sources
+    - `ShowTables` - Show tables from source
+    - `ShowVars` - Show session variables
+    - `Describe` - Describe table schema
+    - `Import` - Import data from files
+    - `Export` - Export data to files
+    - `Map` - Transform data declaratively
+    - `Filter` - Filter data without SQL WHERE
+    - `Unset` - Remove session variables
+
+**Test Coverage:** 34 tests passing (15 core + 3 csv + 16 other modules)
+
+### NQL Parser Implementation (Week 3) 📋 PENDIENTE
+
+**Tasks:**
+
+- [ ] Implement NQL command parser
+  - [ ] `USE <path> [AS alias] [OPTIONS (...)]`
+  - [ ] `SHOW SOURCES / TABLES / VARS`
+  - [ ] `IMPORT / EXPORT` with format options
+  - [ ] `MAP / FILTER` expressions
+  - [ ] `DESCRIBE` command
+
+- [ ] Extend RqlProcessor to handle NQL commands
+- [ ] Add comprehensive parser tests
+- [ ] Integration with Executor
+
+### Executor Integration (Week 4) 📋 PENDIENTE
+
+**Tasks:**
+
+- [ ] Integrate SourceRegistry with Executor
+- [ ] Execute NQL commands in REPL
+- [ ] Handle source switching (USE command)
+- [ ] Implement IMPORT/EXPORT logic
+- [ ] Add MAP/FILTER processing
+
+### TUI Contextual Features (Week 5) 📋 PENDIENTE
+
+**Tasks:**
+
+- [ ] Display active source in header
+  ```
+  ──( COMMAND ) SQL Noctra 0.1.0 ──── Fuente: csv://data.csv ────
+  ```
+- [ ] Show source type indicator
+- [ ] Status bar with source count
+- [ ] Enhanced Alt+R/W for multi-format loading
+
+### Advanced Features (Week 6) 📋 PENDIENTE
+
+**Tasks:**
 
 - [ ] Implement SQL injection prevention
 - [ ] Add input sanitization
