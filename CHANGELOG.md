@@ -7,6 +7,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2025-11-11 (Milestone 4 Fase 1) - **IN PROGRESS**
+
+### Added - IMPORT/EXPORT Commands
+
+#### IMPORT Command Implementation
+- **Full CSV Import to SQLite**: Load CSV files directly into SQLite tables
+  - `IMPORT 'file.csv' AS tablename OPTIONS (delimiter=',', header=true)`
+  - Automatic table creation with column detection
+  - Support for custom delimiters (`,`, `;`, `\t`, `|`)
+  - Header detection (with/without headers)
+  - Quote-aware parsing for complex CSV values
+  - SQL injection prevention with parameterized inserts
+  - Implemented in both TUI and REPL for consistency
+
+#### EXPORT Command Implementation
+- **Multi-Format Export**: Export query results or tables to files
+  - **CSV Export**: `EXPORT tablename TO 'file.csv' FORMAT CSV OPTIONS (delimiter=',', header=true)`
+    - Custom delimiters support
+    - Optional header row
+    - Proper CSV escaping (quotes, newlines, delimiters)
+  - **JSON Export**: `EXPORT tablename TO 'file.json' FORMAT JSON`
+    - Pretty-printed JSON arrays
+    - Automatic type conversion (integers, floats, booleans, nulls)
+  - **Query Support**: Export results from SELECT queries
+    - `EXPORT (SELECT * FROM users WHERE active = true) TO 'active_users.csv' FORMAT CSV`
+  - Implemented in both TUI and REPL
+
+#### MAP & FILTER Command Stubs
+- **MAP Command**: Placeholder for declarative transformations
+  - Parser support implemented
+  - Shows informative message directing users to use SELECT for transformations
+  - Planned for M4 Fase 2 (complete pipeline implementation)
+- **FILTER Command**: Placeholder for declarative filtering
+  - Parser support implemented
+  - Shows informative message directing users to use WHERE clauses
+  - Planned for M4 Fase 2 (complete pipeline implementation)
+
+### Technical Details
+
+#### Code Changes
+- **TUI Updates** (`noctra_tui.rs` - ~300 lines added)
+  - `handle_import()`: Full CSV import logic with error handling
+  - `handle_export()`: Multi-format export with CSV and JSON support
+  - `handle_map()`: Informative placeholder
+  - `handle_filter()`: Informative placeholder
+  - Added serde_json dependency for JSON export
+
+- **REPL Updates** (`repl.rs` - ~300 lines added)
+  - Mirrored TUI implementation for consistency
+  - Terminal-friendly output (println! instead of dialogs)
+  - Same feature set as TUI
+
+- **Parser** (`parser.rs`, `rql_ast.rs`)
+  - Commands already defined in M3.5
+  - Full AST support for IMPORT, EXPORT, MAP, FILTER
+  - OPTIONS parsing with quote support
+
+#### Statistics
+- **Lines Added**: ~600 lines
+- **Files Modified**: 3 (noctra_tui.rs, repl.rs, Cargo.toml)
+- **Build Time**: ~67s (release mode)
+- **Build Status**: ✅ Success
+- **Warnings**: 2 minor (unused imports in core)
+
+### Examples
+
+**Import CSV to SQLite:**
+```sql
+IMPORT 'customers.csv' AS customers OPTIONS (delimiter=',', header=true);
+SELECT * FROM customers;
+```
+
+**Export table to CSV:**
+```sql
+EXPORT customers TO 'customers_backup.csv' FORMAT CSV OPTIONS (delimiter=',', header=true);
+```
+
+**Export query results to JSON:**
+```sql
+EXPORT (SELECT name, email FROM customers WHERE active = true) TO 'active_customers.json' FORMAT JSON;
+```
+
+**Custom delimiter:**
+```sql
+IMPORT 'data.tsv' AS data OPTIONS (delimiter='\t', header=true);
+EXPORT data TO 'data.csv' FORMAT CSV OPTIONS (delimiter=',', header=true);
+```
+
+### Known Limitations
+
+- XLSX export not implemented (planned for M5)
+- JSON import not implemented (planned for M5)
+- MAP/FILTER require complete pipeline implementation (M4 Fase 2)
+- No streaming support for very large files (>1GB)
+- CSV parsing uses simplified algorithm (no RFC 4180 full compliance yet)
+
+### Next Steps (M4 Fase 2)
+
+- Enhanced CSV backend with WHERE, ORDER BY, LIMIT support
+- Aggregations (COUNT, SUM, AVG, MIN, MAX) on CSV files
+- Basic JOIN support between CSV sources
+- Complete MAP/FILTER pipeline implementation
+- Input validation and sandboxing
+- Resource limits (max rows, query timeout)
+- Query result caching with TTL
+
+---
+
 ## [2.0.0] - TBD (Milestone 6 - "FABRIC") - **PLANNED**
 
 > **"No importes datos. Consúltalos."**

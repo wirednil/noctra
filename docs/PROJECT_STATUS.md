@@ -1,8 +1,8 @@
 # Estado del Proyecto Noctra
 
-**Última actualización:** 2025-11-09
-**Branch activo:** `claude/consolidate-docs-requirements-011CUwNWC3vWGG6zKEw1SWYi`
-**Versión:** 0.1.0 (Camino a 1.0.0)
+**Última actualización:** 2025-11-11
+**Branch activo:** `claude/validate-markdown-next-steps-011CV2JHU4XekbnxRXUxE9H5`
+**Versión:** 0.2.0-dev (M4 Fase 1 en progreso)
 
 ---
 
@@ -10,7 +10,7 @@
 
 Noctra es un entorno SQL interactivo moderno escrito en Rust con filosofía 4GL, proporcionando una experiencia profesional de consulta SQL con formularios declarativos y TUI avanzado.
 
-**Progreso General:** M1 ✅ | M2 ✅ | M3 ✅ | **M3.5 ✅** | M4 📋 | M5 📋 | M6 🎯
+**Progreso General:** M1 ✅ | M2 ✅ | M3 ✅ | **M3.5 ✅** | **M4 🚧 25%** | M5 📋 | M6 🎯
 
 | Milestone | Estado | Progreso | Último Commit |
 |-----------|--------|----------|---------------|
@@ -19,14 +19,14 @@ Noctra es un entorno SQL interactivo moderno escrito en Rust con filosofía 4GL,
 | **M2: Forms + TUI** | ✅ Completado | 100% | fa43a74 |
 | **M3: Backend SQL/RQL** | ✅ Completado | 100% | a64a72c |
 | **M3.5: CSV/NQL Hotfix** | ✅ Completado | 100% | dbddebc |
-| **M4: Advanced Features** | 📋 Planificado | 0% | - |
+| **M4: Advanced Features (Fase 1)** | 🚧 En Progreso | 25% | 2025-11-11 |
 | **M5: Extended Capabilities** | 📋 Planificado | 0% | - |
 | **M6: Noctra 2.0 "FABRIC"** | 🎯 Planificado | 0% | - |
 
 **Total Tests:** 29 pasando (100%)
-**Build:** Release OK sin warnings
+**Build:** Release OK (2 warnings menores en core)
 **Clippy:** 0 warnings
-**Estado:** ✅ **Listo para M4**
+**Estado:** 🚧 **M4 Fase 1 Completada - IMPORT/EXPORT implementados**
 
 ### 🆕 Extensión Conceptual: NQL (Noctra Query Language)
 
@@ -589,11 +589,15 @@ This hotfix **accelerates M4** by implementing ~40% of section 4.10 (NQL):
 
 ---
 
-## 📋 Milestone 4 - Advanced Features [PLANIFICADO]
+## 🚧 Milestone 4 - Advanced Features + NQL [EN PROGRESO - 25%]
 
-### Objetivos
+**Fecha Inicio:** 2025-11-11
+**Duración Estimada:** 3-4 semanas (dividido en fases)
+**Progreso:** **Fase 1 completada (25%)** - IMPORT/EXPORT funcionales
 
-Completar todas las funcionalidades avanzadas del TUI y agregar soporte para características empresariales.
+### 🎯 Objetivos del Milestone
+
+Implementar comandos avanzados NQL (IMPORT, EXPORT, MAP, FILTER) y mejorar el CSV backend con soporte para operaciones SQL complejas. Este milestone se divide en 2 fases principales.
 
 #### 4.1 Editor Avanzado
 - [ ] Syntax highlighting SQL/RQL

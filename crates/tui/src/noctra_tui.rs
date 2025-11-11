@@ -701,6 +701,18 @@ impl<'a> NoctraTui<'a> {
                         RqlStatement::Unset { variables } => {
                             self.handle_unset(variables)?;
                         }
+                        RqlStatement::Import { file, table, options } => {
+                            self.handle_import(file, table, options)?;
+                        }
+                        RqlStatement::Export { query, file, format, options } => {
+                            self.handle_export(query, file, format, options)?;
+                        }
+                        RqlStatement::Map { expressions } => {
+                            self.handle_map(expressions)?;
+                        }
+                        RqlStatement::Filter { condition } => {
+                            self.handle_filter(condition)?;
+                        }
                         _ => {
                             self.show_error_dialog(&format!("⚠️ Comando no implementado: {:?}", statement.statement_type()));
                         }
@@ -990,6 +1002,256 @@ impl<'a> NoctraTui<'a> {
         }
 
         self.show_info_dialog(&message);
+        Ok(())
+    }
+
+    /// Manejar comando IMPORT
+    /// Sintaxis: IMPORT 'file.csv' AS table OPTIONS (delimiter=',', header=true)
+    fn handle_import(&mut self, file: &str, table: &str, options: &HashMap<String, String>) -> Result<(), Box<dyn std::error::Error>> {
+        use std::fs::File;
+        use std::io::{BufRead, BufReader};
+
+        // Detectar formato por extensión
+        let is_csv = file.ends_with(".csv");
+        let is_json = file.ends_with(".json");
+
+        if !is_csv && !is_json {
+            return Err(Box::new(NoctraError::Internal(
+                format!("Formato de archivo no soportado: {} (solo .csv y .json)", file)
+            )));
+        }
+
+        // Leer archivo
+        let file_handle = File::open(file)
+            .map_err(|e| NoctraError::Internal(format!("Error abriendo archivo: {}", e)))?;
+        let reader = BufReader::new(file_handle);
+
+        if is_csv {
+            // Importar CSV
+            let delimiter = options.get("delimiter")
+                .and_then(|d| d.chars().next())
+                .unwrap_or(',');
+            let has_header = options.get("header")
+                .map(|h| h == "true")
+                .unwrap_or(true);
+
+            let mut lines = reader.lines();
+
+            // Leer header
+            let header_line = if let Some(Ok(line)) = lines.next() {
+                line
+            } else {
+                return Err(Box::new(NoctraError::Internal("Archivo CSV vacío".into())));
+            };
+
+            let columns: Vec<String> = header_line
+                .split(delimiter)
+                .map(|s| s.trim().trim_matches('"').to_string())
+                .collect();
+
+            if columns.is_empty() {
+                return Err(Box::new(NoctraError::Internal("No se encontraron columnas en CSV".into())));
+            }
+
+            // Crear tabla en SQLite
+            let column_defs: Vec<String> = columns.iter()
+                .map(|col| format!("{} TEXT", col))
+                .collect();
+            let create_sql = format!("CREATE TABLE IF NOT EXISTS {} ({})", table, column_defs.join(", "));
+
+            self.executor.execute_sql(&self.session, &create_sql)
+                .map_err(|e| NoctraError::Internal(format!("Error creando tabla: {}", e)))?;
+
+            // Insertar datos
+            let mut rows_imported = 0;
+
+            // Si no tiene header, procesar la primera línea como datos
+            if !has_header {
+                let values: Vec<String> = header_line
+                    .split(delimiter)
+                    .map(|s| s.trim().trim_matches('"').to_string())
+                    .collect();
+
+                // Construir INSERT con valores literales (por simplicidad)
+                let values_str = values.iter()
+                    .map(|v| format!("'{}'", v.replace('\'', "''")))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let insert = format!("INSERT INTO {} VALUES ({})", table, values_str);
+                self.executor.execute_sql(&self.session, &insert)?;
+                rows_imported += 1;
+            }
+
+            // Procesar resto de líneas
+            for line_result in lines {
+                let line = line_result
+                    .map_err(|e| NoctraError::Internal(format!("Error leyendo línea: {}", e)))?;
+
+                let values: Vec<String> = line
+                    .split(delimiter)
+                    .map(|s| s.trim().trim_matches('"').to_string())
+                    .collect();
+
+                if values.len() != columns.len() {
+                    eprintln!("⚠️ Advertencia: línea con número incorrecto de columnas, saltando");
+                    continue;
+                }
+
+                // Construir INSERT con valores literales
+                let values_str = values.iter()
+                    .map(|v| format!("'{}'", v.replace('\'', "''")))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let insert = format!("INSERT INTO {} VALUES ({})", table, values_str);
+                self.executor.execute_sql(&self.session, &insert)?;
+                rows_imported += 1;
+            }
+
+            self.show_info_dialog(&format!("✅ Importadas {} filas desde '{}' a tabla '{}'", rows_imported, file, table));
+        } else if is_json {
+            // JSON import: no implementado aún en M4
+            return Err(Box::new(NoctraError::Internal(
+                "Importación de JSON no implementada en M4 (planeado para M5)".into()
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Manejar comando EXPORT
+    /// Sintaxis: EXPORT table TO 'file.csv' FORMAT CSV OPTIONS (delimiter=',', header=true)
+    fn handle_export(&mut self, query: &str, file: &str, format: &noctra_parser::ExportFormat, options: &HashMap<String, String>) -> Result<(), Box<dyn std::error::Error>> {
+        use std::fs::File;
+        use std::io::Write;
+
+        // Ejecutar query para obtener datos
+        let result = if query.to_uppercase().starts_with("SELECT ") {
+            // Es una query completa
+            let params = HashMap::new();
+            let rql_query = RqlQuery::new(query, params);
+            self.executor.execute_rql(&self.session, rql_query)?
+        } else {
+            // Es un nombre de tabla, generar SELECT *
+            let select_query = format!("SELECT * FROM {}", query);
+            let params = HashMap::new();
+            let rql_query = RqlQuery::new(&select_query, params);
+            self.executor.execute_rql(&self.session, rql_query)?
+        };
+
+        match format {
+            noctra_parser::ExportFormat::Csv => {
+                let delimiter = options.get("delimiter")
+                    .and_then(|d| d.chars().next())
+                    .unwrap_or(',');
+                let has_header = options.get("header")
+                    .map(|h| h == "true")
+                    .unwrap_or(true);
+
+                let mut file_handle = File::create(file)
+                    .map_err(|e| NoctraError::Internal(format!("Error creando archivo: {}", e)))?;
+
+                // Escribir header si está habilitado
+                if has_header {
+                    let header_names: Vec<String> = result.columns.iter()
+                        .map(|col| col.name.clone())
+                        .collect();
+                    let header_line = header_names.join(&delimiter.to_string());
+                    writeln!(file_handle, "{}", header_line)
+                        .map_err(|e| NoctraError::Internal(format!("Error escribiendo header: {}", e)))?;
+                }
+
+                // Escribir filas
+                for row in &result.rows {
+                    let row_values: Vec<String> = row.values.iter()
+                        .map(|v| {
+                            match v {
+                                noctra_core::Value::Text(s) => {
+                                    // Escapar comillas dobles y envolver en comillas si contiene delimitador
+                                    if s.contains(delimiter) || s.contains('"') || s.contains('\n') {
+                                        format!("\"{}\"", s.replace('"', "\"\""))
+                                    } else {
+                                        s.clone()
+                                    }
+                                }
+                                noctra_core::Value::Integer(i) => i.to_string(),
+                                noctra_core::Value::Float(f) => f.to_string(),
+                                noctra_core::Value::Boolean(b) => b.to_string(),
+                                noctra_core::Value::Null => String::new(),
+                                _ => format!("{:?}", v),
+                            }
+                        })
+                        .collect();
+
+                    writeln!(file_handle, "{}", row_values.join(&delimiter.to_string()))
+                        .map_err(|e| NoctraError::Internal(format!("Error escribiendo fila: {}", e)))?;
+                }
+
+                self.show_info_dialog(&format!("✅ Exportadas {} filas a '{}'", result.rows.len(), file));
+            }
+            noctra_parser::ExportFormat::Json => {
+                use serde_json::{json, Value as JsonValue};
+
+                let mut file_handle = File::create(file)
+                    .map_err(|e| NoctraError::Internal(format!("Error creando archivo: {}", e)))?;
+
+                // Convertir ResultSet a JSON array
+                let rows_json: Vec<JsonValue> = result.rows.iter()
+                    .map(|row| {
+                        let mut obj = serde_json::Map::new();
+                        for (i, col) in result.columns.iter().enumerate() {
+                            let value = &row.values[i];
+                            let json_val = match value {
+                                noctra_core::Value::Text(s) => JsonValue::String(s.clone()),
+                                noctra_core::Value::Integer(i) => JsonValue::Number((*i).into()),
+                                noctra_core::Value::Float(f) => {
+                                    if let Some(num) = serde_json::Number::from_f64(*f) {
+                                        JsonValue::Number(num)
+                                    } else {
+                                        JsonValue::Null
+                                    }
+                                }
+                                noctra_core::Value::Boolean(b) => JsonValue::Bool(*b),
+                                noctra_core::Value::Null => JsonValue::Null,
+                                _ => JsonValue::String(format!("{:?}", value)),
+                            };
+                            obj.insert(col.name.clone(), json_val);
+                        }
+                        JsonValue::Object(obj)
+                    })
+                    .collect();
+
+                let json_output = json!(rows_json);
+                writeln!(file_handle, "{}", serde_json::to_string_pretty(&json_output)
+                    .map_err(|e| NoctraError::Internal(format!("Error serializando JSON: {}", e)))?)
+                    .map_err(|e| NoctraError::Internal(format!("Error escribiendo JSON: {}", e)))?;
+
+                self.show_info_dialog(&format!("✅ Exportadas {} filas a '{}'", result.rows.len(), file));
+            }
+            noctra_parser::ExportFormat::Xlsx => {
+                return Err(Box::new(NoctraError::Internal(
+                    "Exportación a XLSX no implementada en M4 (planeado para M5)".into()
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Manejar comando MAP
+    /// Sintaxis: MAP expression1 AS alias1, expression2 AS alias2, ...
+    fn handle_map(&mut self, _expressions: &[noctra_parser::MapExpression]) -> Result<(), Box<dyn std::error::Error>> {
+        // MAP no implementado completamente en M4 - requiere pipeline de transformación
+        // Por ahora, mostrar mensaje informativo
+        self.show_info_dialog("⚠️ MAP: Transformaciones declarativas\n\nNo implementado completamente en M4.\nUse SELECT para transformaciones simples.\n\nEjemplo:\nSELECT UPPER(nombre) AS nombre, precio * 1.1 AS precio_nuevo\nFROM productos;");
+        Ok(())
+    }
+
+    /// Manejar comando FILTER
+    /// Sintaxis: FILTER condition
+    fn handle_filter(&mut self, _condition: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // FILTER no implementado completamente en M4 - requiere pipeline de transformación
+        // Por ahora, mostrar mensaje informativo
+        self.show_info_dialog("⚠️ FILTER: Filtrado declarativo\n\nNo implementado completamente en M4.\nUse WHERE en SELECT.\n\nEjemplo:\nSELECT * FROM productos\nWHERE precio > 100;");
         Ok(())
     }
 

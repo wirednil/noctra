@@ -196,63 +196,122 @@ SHOW csv.clientes;
 
 ### IMPORT - Importar Datos
 
+**Status:** ✅ Implementado en M4 Fase 1 (2025-11-11)
+
 **Sintaxis:**
 ```sql
-IMPORT <archivo> AS <tabla> [OPTIONS];
+IMPORT '<archivo>' AS <tabla> [OPTIONS (key=value, ...)];
 ```
+
+**Parámetros:**
+- `<archivo>`: Ruta al archivo (con comillas simples)
+- `<tabla>`: Nombre de la tabla destino en SQLite
+- `OPTIONS`:
+  - `delimiter`: Delimitador de campos (`,`, `;`, `\t`, `|`) - default: `,`
+  - `header`: Si tiene encabezados (`true`/`false`) - default: `true`
 
 **Ejemplos:**
 ```sql
--- Importar CSV a tabla temporal
+-- Importar CSV básico (comma-delimited, con headers)
 IMPORT 'ventas.csv' AS ventas;
 
--- Importar con opciones
-IMPORT 'datos.csv' AS datos OPTIONS (
-    delimiter = '\t',
-    skip_rows = 2
-);
+-- Importar TSV (tab-delimited)
+IMPORT 'datos.tsv' AS datos OPTIONS (delimiter='\t', header=true);
 
--- Importar JSON
-IMPORT 'config.json' AS config;
+-- Importar CSV sin headers
+IMPORT 'numeros.csv' AS numeros OPTIONS (header=false);
+
+-- Importar con pipe delimiter
+IMPORT 'legacy.txt' AS legacy OPTIONS (delimiter='|', header=true);
 ```
 
 **Comportamiento:**
-- Crea una tabla temporal en la fuente actual
-- Infiere tipos de columnas automáticamente
-- Permite usar la tabla en queries subsiguientes
+- ✅ **Crea tabla SQLite** con columnas detectadas del header
+- ✅ **Auto-detección de tipos**: Por ahora todas las columnas son TEXT (inferencia de tipos en M4 Fase 2)
+- ✅ **Quote-aware parsing**: Respeta comillas en valores CSV
+- ✅ **Disponible en TUI y REPL**
+- ✅ **SQL injection prevention**: Usa valores literales escapados
+
+**Formatos Soportados:**
+- ✅ CSV (`.csv`) - completamente funcional
+- ❌ JSON (`.json`) - no implementado en M4 Fase 1 (planeado para M5)
+
+**Limitaciones Actuales:**
+- No soporta archivos >1GB (sin streaming)
+- No infiere tipos automáticamente (todas columnas TEXT)
+- No soporta skip_rows (planned for M4 Fase 2)
+- Parsing CSV simplificado (no RFC 4180 completo)
 
 ### EXPORT - Exportar Datos
 
+**Status:** ✅ Implementado en M4 Fase 1 (2025-11-11)
+
 **Sintaxis:**
 ```sql
-EXPORT <tabla|query> TO <archivo> [FORMAT <formato>] [OPTIONS];
+EXPORT <tabla|query> TO '<archivo>' FORMAT <formato> [OPTIONS (key=value, ...)];
 ```
+
+**Parámetros:**
+- `<tabla|query>`: Nombre de tabla o query SELECT completa
+- `<archivo>`: Ruta del archivo destino (con comillas simples)
+- `FORMAT`: Formato de exportación requerido (CSV, JSON, XLSX)
+- `OPTIONS`:
+  - **Para CSV:**
+    - `delimiter`: Delimitador (`,`, `;`, `\t`, `|`) - default: `,`
+    - `header`: Incluir encabezados (`true`/`false`) - default: `true`
+  - **Para JSON:** (todas aplicadas automáticamente)
+    - Pretty-printing automático
+    - Conversión de tipos automática
 
 **Ejemplos:**
 ```sql
 -- Exportar tabla completa a CSV
-EXPORT empleados TO 'export.csv';
-
--- Exportar resultado de query
-EXPORT (SELECT * FROM empleados WHERE activo = true)
-TO 'activos.csv';
-
--- Exportar a JSON con formato
-EXPORT empleados TO 'data.json' FORMAT json OPTIONS (
-    pretty = true,
-    indent = 2
-);
+EXPORT empleados TO 'empleados.csv' FORMAT CSV;
 
 -- Exportar con delimitador personalizado
-EXPORT ventas TO 'ventas.tsv' OPTIONS (
-    delimiter = '\t'
-);
+EXPORT ventas TO 'ventas.tsv' FORMAT CSV OPTIONS (delimiter='\t', header=true);
+
+-- Exportar resultado de query a CSV
+EXPORT (SELECT * FROM empleados WHERE activo = true)
+TO 'empleados_activos.csv' FORMAT CSV;
+
+-- Exportar a JSON (pretty-printed automático)
+EXPORT empleados TO 'empleados.json' FORMAT JSON;
+
+-- Exportar query compleja a JSON
+EXPORT (SELECT nombre, email, COUNT(pedidos.id) AS total_pedidos
+        FROM usuarios
+        LEFT JOIN pedidos ON usuarios.id = pedidos.usuario_id
+        GROUP BY usuarios.id)
+TO 'reporte_usuarios.json' FORMAT JSON;
+
+-- CSV sin headers
+EXPORT datos TO 'datos_raw.csv' FORMAT CSV OPTIONS (header=false);
 ```
 
-**Formatos soportados:**
-- `csv` (default)
-- `json`
-- `xlsx` (opcional, M5)
+**Formatos Soportados:**
+- ✅ **CSV** (`.csv`) - completamente funcional
+  - Escaping automático de comillas, newlines, delimiters
+  - Soporte para custom delimiters
+  - Headers opcionales
+- ✅ **JSON** (`.json`) - completamente funcional
+  - Pretty-printed automático
+  - Conversión automática de tipos (INTEGER, FLOAT, BOOLEAN, NULL, TEXT)
+  - Arrays de objetos estándar
+- ❌ **XLSX** (`.xlsx`) - no implementado en M4 Fase 1 (planeado para M5)
+
+**Comportamiento:**
+- ✅ **Soporta queries complejas**: SELECT, JOINs, GROUP BY, etc.
+- ✅ **Soporta nombres de tabla**: Convierte automáticamente a `SELECT * FROM tabla`
+- ✅ **Disponible en TUI y REPL**
+- ✅ **Proper CSV escaping**: Maneja comillas, newlines y delimiters en valores
+- ✅ **Type-aware JSON**: Convierte tipos SQL a tipos JSON correctos
+
+**Limitaciones Actuales:**
+- No soporta exportación parcial (column selection) - debe hacerse en query
+- No hay progreso de exportación para archivos grandes
+- JSON siempre es array de objetos (no soporta otros formatos)
+- XLSX no implementado (planned for M5)
 
 ---
 
