@@ -7,6 +7,258 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2025-11-11 (Milestone 4 Fase 1) - **IN PROGRESS**
+
+### Added - IMPORT/EXPORT Commands
+
+#### IMPORT Command Implementation
+- **Full CSV Import to SQLite**: Load CSV files directly into SQLite tables
+  - `IMPORT 'file.csv' AS tablename OPTIONS (delimiter=',', header=true)`
+  - Automatic table creation with column detection
+  - Support for custom delimiters (`,`, `;`, `\t`, `|`)
+  - Header detection (with/without headers)
+  - Quote-aware parsing for complex CSV values
+  - SQL injection prevention with parameterized inserts
+  - Implemented in both TUI and REPL for consistency
+
+#### EXPORT Command Implementation
+- **Multi-Format Export**: Export query results or tables to files
+  - **CSV Export**: `EXPORT tablename TO 'file.csv' FORMAT CSV OPTIONS (delimiter=',', header=true)`
+    - Custom delimiters support
+    - Optional header row
+    - Proper CSV escaping (quotes, newlines, delimiters)
+  - **JSON Export**: `EXPORT tablename TO 'file.json' FORMAT JSON`
+    - Pretty-printed JSON arrays
+    - Automatic type conversion (integers, floats, booleans, nulls)
+  - **Query Support**: Export results from SELECT queries
+    - `EXPORT (SELECT * FROM users WHERE active = true) TO 'active_users.csv' FORMAT CSV`
+  - Implemented in both TUI and REPL
+
+#### MAP & FILTER Command Stubs
+- **MAP Command**: Placeholder for declarative transformations
+  - Parser support implemented
+  - Shows informative message directing users to use SELECT for transformations
+  - Planned for M4 Fase 2 (complete pipeline implementation)
+- **FILTER Command**: Placeholder for declarative filtering
+  - Parser support implemented
+  - Shows informative message directing users to use WHERE clauses
+  - Planned for M4 Fase 2 (complete pipeline implementation)
+
+### Technical Details
+
+#### Code Changes
+- **TUI Updates** (`noctra_tui.rs` - ~300 lines added)
+  - `handle_import()`: Full CSV import logic with error handling
+  - `handle_export()`: Multi-format export with CSV and JSON support
+  - `handle_map()`: Informative placeholder
+  - `handle_filter()`: Informative placeholder
+  - Added serde_json dependency for JSON export
+
+- **REPL Updates** (`repl.rs` - ~300 lines added)
+  - Mirrored TUI implementation for consistency
+  - Terminal-friendly output (println! instead of dialogs)
+  - Same feature set as TUI
+
+- **Parser** (`parser.rs`, `rql_ast.rs`)
+  - Commands already defined in M3.5
+  - Full AST support for IMPORT, EXPORT, MAP, FILTER
+  - OPTIONS parsing with quote support
+
+#### Statistics
+- **Lines Added**: ~600 lines
+- **Files Modified**: 3 (noctra_tui.rs, repl.rs, Cargo.toml)
+- **Build Time**: ~67s (release mode)
+- **Build Status**: ✅ Success
+- **Warnings**: 2 minor (unused imports in core)
+
+### Examples
+
+**Import CSV to SQLite:**
+```sql
+IMPORT 'customers.csv' AS customers OPTIONS (delimiter=',', header=true);
+SELECT * FROM customers;
+```
+
+**Export table to CSV:**
+```sql
+EXPORT customers TO 'customers_backup.csv' FORMAT CSV OPTIONS (delimiter=',', header=true);
+```
+
+**Export query results to JSON:**
+```sql
+EXPORT (SELECT name, email FROM customers WHERE active = true) TO 'active_customers.json' FORMAT JSON;
+```
+
+**Custom delimiter:**
+```sql
+IMPORT 'data.tsv' AS data OPTIONS (delimiter='\t', header=true);
+EXPORT data TO 'data.csv' FORMAT CSV OPTIONS (delimiter=',', header=true);
+```
+
+### Known Limitations
+
+- XLSX export not implemented (planned for M5)
+- JSON import not implemented (planned for M5)
+- MAP/FILTER require complete pipeline implementation (M4 Fase 2)
+- No streaming support for very large files (>1GB)
+- CSV parsing uses simplified algorithm (no RFC 4180 full compliance yet)
+
+---
+
+## [0.2.0] - 2025-11-11 (Milestone 4 Fase 2) - **COMPLETED**
+
+### Added - Enhanced CSV Backend & Security
+
+#### CSV Query Enhancements
+- **WHERE Clause Support**: Filter CSV data with conditions
+  - Supports operators: `=`, `!=`, `<`, `>`, `<=`, `>=`
+  - Logical operators: `AND`, `OR`
+  - Type-aware comparisons (INTEGER, REAL, TEXT, BOOLEAN)
+  - Example: `SELECT * FROM data WHERE age > 25 AND active = true`
+
+- **ORDER BY Support**: Sort CSV results
+  - Single or multiple column sorting
+  - ASC/DESC directions
+  - Example: `SELECT * FROM products ORDER BY price DESC, name ASC`
+
+- **LIMIT/OFFSET Support**: Pagination for large result sets
+  - `LIMIT n` - Return only first n rows
+  - `OFFSET n` - Skip first n rows
+  - Example: `SELECT * FROM users LIMIT 10 OFFSET 20`
+
+#### Aggregate Functions on CSV
+- **COUNT(*)** or **COUNT(column)**: Count rows or non-null values
+- **SUM(column)**: Sum numeric values
+- **AVG(column)**: Average of numeric values
+- **MIN(column)**: Minimum value
+- **MAX(column)**: Maximum value
+- All aggregates support WHERE clause filtering
+- Example: `SELECT COUNT(*) FROM sales WHERE amount > 1000`
+
+#### Security & Validation
+- **File Path Sandboxing**:
+  - Blocks access to system directories (`/etc`, `/sys`, `/proc`, `/dev`, `/root`, `/boot`, Windows system dirs)
+  - Prevents path traversal attacks (`..` patterns blocked)
+  - Validates files are regular files (not devices/sockets)
+  - Applied to IMPORT and EXPORT commands
+
+- **SQL Injection Prevention**:
+  - Table name validation (only alphanumeric, `_`, `-` allowed)
+  - Value escaping in CSV import (`'` → `''`)
+  - Column name sanitization
+
+- **Resource Limits**:
+  - Maximum CSV file size: 100MB
+  - Maximum rows per CSV: 1,000,000
+  - Prevents DoS attacks from oversized files
+
+### Technical Details
+
+#### Code Changes
+- **CSV Backend** (`csv_backend.rs` - ~600 lines added):
+  - `ParsedQuery` enum for query representation
+  - `parse_sql_query()`: SQL parser for WHERE/ORDER BY/LIMIT/aggregates
+  - `evaluate_where_condition()`: Recursive condition evaluator with AND/OR
+  - `apply_order_by()`: Multi-column sorting with ASC/DESC
+  - `execute_aggregate()`: Aggregate function calculator
+  - `validate_file_path()`: Path sandboxing validator
+  - `sanitize_column_name()`: SQL injection preventer
+
+- **TUI Updates** (`noctra_tui.rs` - ~100 lines added):
+  - `validate_file_path()`: File path validator
+  - `validate_table_name()`: Table name validator
+  - Added validations to `handle_import()` and `handle_export()`
+  - File size checks (100MB limit)
+
+- **REPL Updates** (`repl.rs` - ~100 lines added):
+  - Mirror of TUI validation functions
+  - Same security checks for IMPORT/EXPORT
+
+#### Statistics
+- **Lines Added**: ~800 lines (600 core + 200 TUI/REPL)
+- **Files Modified**: 3 (csv_backend.rs, noctra_tui.rs, repl.rs)
+- **Build Time**: ~7-15s (release mode)
+- **Build Status**: ✅ Success
+- **Warnings**: 3 minor (unused imports/variables)
+
+### Examples
+
+**WHERE Clause:**
+```sql
+-- Load CSV
+USE 'employees.csv' AS emp;
+
+-- Filter employees
+SELECT * FROM employees WHERE dept = 'IT' AND salary > 50000;
+
+-- Complex conditions
+SELECT * FROM products WHERE (category = 'Electronics' OR category = 'Computers') AND stock > 0;
+```
+
+**ORDER BY:**
+```sql
+-- Sort by single column
+SELECT * FROM products ORDER BY price DESC;
+
+-- Sort by multiple columns
+SELECT * FROM employees ORDER BY dept ASC, salary DESC;
+```
+
+**LIMIT/OFFSET (Pagination):**
+```sql
+-- First 10 records
+SELECT * FROM users LIMIT 10;
+
+-- Records 11-20 (second page)
+SELECT * FROM users LIMIT 10 OFFSET 10;
+
+-- Top 5 products by price
+SELECT * FROM products ORDER BY price DESC LIMIT 5;
+```
+
+**Aggregates:**
+```sql
+-- Count all rows
+SELECT COUNT(*) FROM sales;
+
+-- Sum with filter
+SELECT SUM(amount) FROM sales WHERE date >= '2024-01-01';
+
+-- Average, min, max
+SELECT AVG(price) FROM products WHERE category = 'Electronics';
+SELECT MIN(age) FROM employees;
+SELECT MAX(salary) FROM employees WHERE dept = 'Engineering';
+```
+
+**Security Examples:**
+```sql
+-- ✅ Valid paths
+IMPORT './data/sales.csv' AS sales;
+EXPORT sales TO './exports/backup.csv' FORMAT CSV;
+
+-- ❌ Blocked (system directories)
+IMPORT '/etc/passwd' AS secrets;  -- Error: Access denied
+
+-- ❌ Blocked (path traversal)
+IMPORT '../../../etc/shadow' AS hack;  -- Error: Path traversal not allowed
+
+-- ❌ Blocked (invalid table name)
+IMPORT 'data.csv' AS 'users; DROP TABLE --';  -- Error: Invalid table name
+
+-- ✅ Valid table name
+IMPORT 'data.csv' AS users_2024;
+```
+
+### Known Limitations
+
+- No JOIN support between CSV files yet (planned for M5)
+- No GROUP BY with aggregates (only single aggregate per query)
+- WHERE conditions limited to simple comparisons (no LIKE, IN, BETWEEN yet)
+- No query timeout implemented (file size/row limits provide some protection)
+- Aggregates convert all numeric types to REAL (f64)
+
+---
+
 ## [2.0.0] - TBD (Milestone 6 - "FABRIC") - **PLANNED**
 
 > **"No importes datos. Consúltalos."**

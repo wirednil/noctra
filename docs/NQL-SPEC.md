@@ -196,63 +196,122 @@ SHOW csv.clientes;
 
 ### IMPORT - Importar Datos
 
+**Status:** ✅ Implementado en M4 Fase 1 (2025-11-11)
+
 **Sintaxis:**
 ```sql
-IMPORT <archivo> AS <tabla> [OPTIONS];
+IMPORT '<archivo>' AS <tabla> [OPTIONS (key=value, ...)];
 ```
+
+**Parámetros:**
+- `<archivo>`: Ruta al archivo (con comillas simples)
+- `<tabla>`: Nombre de la tabla destino en SQLite
+- `OPTIONS`:
+  - `delimiter`: Delimitador de campos (`,`, `;`, `\t`, `|`) - default: `,`
+  - `header`: Si tiene encabezados (`true`/`false`) - default: `true`
 
 **Ejemplos:**
 ```sql
--- Importar CSV a tabla temporal
+-- Importar CSV básico (comma-delimited, con headers)
 IMPORT 'ventas.csv' AS ventas;
 
--- Importar con opciones
-IMPORT 'datos.csv' AS datos OPTIONS (
-    delimiter = '\t',
-    skip_rows = 2
-);
+-- Importar TSV (tab-delimited)
+IMPORT 'datos.tsv' AS datos OPTIONS (delimiter='\t', header=true);
 
--- Importar JSON
-IMPORT 'config.json' AS config;
+-- Importar CSV sin headers
+IMPORT 'numeros.csv' AS numeros OPTIONS (header=false);
+
+-- Importar con pipe delimiter
+IMPORT 'legacy.txt' AS legacy OPTIONS (delimiter='|', header=true);
 ```
 
 **Comportamiento:**
-- Crea una tabla temporal en la fuente actual
-- Infiere tipos de columnas automáticamente
-- Permite usar la tabla en queries subsiguientes
+- ✅ **Crea tabla SQLite** con columnas detectadas del header
+- ✅ **Auto-detección de tipos**: Por ahora todas las columnas son TEXT (inferencia de tipos en M4 Fase 2)
+- ✅ **Quote-aware parsing**: Respeta comillas en valores CSV
+- ✅ **Disponible en TUI y REPL**
+- ✅ **SQL injection prevention**: Usa valores literales escapados
+
+**Formatos Soportados:**
+- ✅ CSV (`.csv`) - completamente funcional
+- ❌ JSON (`.json`) - no implementado en M4 Fase 1 (planeado para M5)
+
+**Limitaciones Actuales:**
+- No soporta archivos >1GB (sin streaming)
+- No infiere tipos automáticamente (todas columnas TEXT)
+- No soporta skip_rows (planned for M4 Fase 2)
+- Parsing CSV simplificado (no RFC 4180 completo)
 
 ### EXPORT - Exportar Datos
 
+**Status:** ✅ Implementado en M4 Fase 1 (2025-11-11)
+
 **Sintaxis:**
 ```sql
-EXPORT <tabla|query> TO <archivo> [FORMAT <formato>] [OPTIONS];
+EXPORT <tabla|query> TO '<archivo>' FORMAT <formato> [OPTIONS (key=value, ...)];
 ```
+
+**Parámetros:**
+- `<tabla|query>`: Nombre de tabla o query SELECT completa
+- `<archivo>`: Ruta del archivo destino (con comillas simples)
+- `FORMAT`: Formato de exportación requerido (CSV, JSON, XLSX)
+- `OPTIONS`:
+  - **Para CSV:**
+    - `delimiter`: Delimitador (`,`, `;`, `\t`, `|`) - default: `,`
+    - `header`: Incluir encabezados (`true`/`false`) - default: `true`
+  - **Para JSON:** (todas aplicadas automáticamente)
+    - Pretty-printing automático
+    - Conversión de tipos automática
 
 **Ejemplos:**
 ```sql
 -- Exportar tabla completa a CSV
-EXPORT empleados TO 'export.csv';
-
--- Exportar resultado de query
-EXPORT (SELECT * FROM empleados WHERE activo = true)
-TO 'activos.csv';
-
--- Exportar a JSON con formato
-EXPORT empleados TO 'data.json' FORMAT json OPTIONS (
-    pretty = true,
-    indent = 2
-);
+EXPORT empleados TO 'empleados.csv' FORMAT CSV;
 
 -- Exportar con delimitador personalizado
-EXPORT ventas TO 'ventas.tsv' OPTIONS (
-    delimiter = '\t'
-);
+EXPORT ventas TO 'ventas.tsv' FORMAT CSV OPTIONS (delimiter='\t', header=true);
+
+-- Exportar resultado de query a CSV
+EXPORT (SELECT * FROM empleados WHERE activo = true)
+TO 'empleados_activos.csv' FORMAT CSV;
+
+-- Exportar a JSON (pretty-printed automático)
+EXPORT empleados TO 'empleados.json' FORMAT JSON;
+
+-- Exportar query compleja a JSON
+EXPORT (SELECT nombre, email, COUNT(pedidos.id) AS total_pedidos
+        FROM usuarios
+        LEFT JOIN pedidos ON usuarios.id = pedidos.usuario_id
+        GROUP BY usuarios.id)
+TO 'reporte_usuarios.json' FORMAT JSON;
+
+-- CSV sin headers
+EXPORT datos TO 'datos_raw.csv' FORMAT CSV OPTIONS (header=false);
 ```
 
-**Formatos soportados:**
-- `csv` (default)
-- `json`
-- `xlsx` (opcional, M5)
+**Formatos Soportados:**
+- ✅ **CSV** (`.csv`) - completamente funcional
+  - Escaping automático de comillas, newlines, delimiters
+  - Soporte para custom delimiters
+  - Headers opcionales
+- ✅ **JSON** (`.json`) - completamente funcional
+  - Pretty-printed automático
+  - Conversión automática de tipos (INTEGER, FLOAT, BOOLEAN, NULL, TEXT)
+  - Arrays de objetos estándar
+- ❌ **XLSX** (`.xlsx`) - no implementado en M4 Fase 1 (planeado para M5)
+
+**Comportamiento:**
+- ✅ **Soporta queries complejas**: SELECT, JOINs, GROUP BY, etc.
+- ✅ **Soporta nombres de tabla**: Convierte automáticamente a `SELECT * FROM tabla`
+- ✅ **Disponible en TUI y REPL**
+- ✅ **Proper CSV escaping**: Maneja comillas, newlines y delimiters en valores
+- ✅ **Type-aware JSON**: Convierte tipos SQL a tipos JSON correctos
+
+**Limitaciones Actuales:**
+- No soporta exportación parcial (column selection) - debe hacerse en query
+- No hay progreso de exportación para archivos grandes
+- JSON siempre es array de objetos (no soporta otros formatos)
+- XLSX no implementado (planned for M5)
 
 ---
 
@@ -634,6 +693,173 @@ pub enum SourceType {
     JSON { path: String },
     Memory { capacity: usize },
 }
+```
+
+### CSV Query Capabilities
+
+**Status:** ✅ Implementado en M4 Fase 2 (2025-11-11)
+
+El backend CSV de Noctra soporta consultas SQL avanzadas directamente sobre archivos CSV sin necesidad de importarlos a SQLite.
+
+#### Operaciones Soportadas
+
+**SELECT con WHERE:**
+```sql
+-- Filtrado básico
+SELECT * FROM employees WHERE dept = 'IT';
+
+-- Operadores de comparación
+SELECT * FROM products WHERE price > 100 AND stock <= 50;
+
+-- Operadores lógicos
+SELECT * FROM users WHERE (age >= 18 AND age <= 65) OR vip = true;
+```
+
+**Operadores WHERE:**
+- `=` - Igualdad
+- `!=` - Desigualdad
+- `<` - Menor que
+- `>` - Mayor que
+- `<=` - Menor o igual
+- `>=` - Mayor o igual
+- `AND` - Conjunción lógica
+- `OR` - Disyunción lógica
+
+**ORDER BY:**
+```sql
+-- Ordenamiento simple
+SELECT * FROM products ORDER BY price DESC;
+
+-- Ordenamiento múltiple
+SELECT * FROM employees ORDER BY dept ASC, salary DESC;
+
+-- Con WHERE
+SELECT * FROM products WHERE category = 'Electronics' ORDER BY price ASC;
+```
+
+**LIMIT y OFFSET (Paginación):**
+```sql
+-- Primeros 10 registros
+SELECT * FROM users LIMIT 10;
+
+-- Registros 11-20 (página 2)
+SELECT * FROM users LIMIT 10 OFFSET 10;
+
+-- Top 5 productos más caros
+SELECT * FROM products ORDER BY price DESC LIMIT 5;
+```
+
+**Funciones de Agregación:**
+```sql
+-- Contar registros
+SELECT COUNT(*) FROM sales;
+SELECT COUNT(customer_id) FROM orders;
+
+-- Sumar valores numéricos
+SELECT SUM(amount) FROM transactions;
+SELECT SUM(quantity * price) FROM orders WHERE status = 'completed';
+
+-- Promedio
+SELECT AVG(salary) FROM employees WHERE dept = 'Engineering';
+
+-- Mínimo y máximo
+SELECT MIN(age) FROM users;
+SELECT MAX(price) FROM products WHERE category = 'Laptops';
+
+-- Agregaciones con WHERE
+SELECT COUNT(*) FROM sales WHERE date >= '2024-01-01';
+SELECT AVG(rating) FROM reviews WHERE product_id = 123;
+```
+
+#### Inferencia de Tipos
+
+El backend CSV detecta automáticamente los tipos de datos:
+- **INTEGER**: Valores numéricos enteros (ej: `123`, `-456`)
+- **REAL**: Valores numéricos decimales (ej: `19.99`, `-3.14`)
+- **BOOLEAN**: Valores booleanos (`true`, `false`, `t`, `f`, `1`, `0`, `yes`, `no`)
+- **TEXT**: Cualquier otro valor
+
+Los tipos se infieren analizando las primeras 100 filas del CSV.
+
+#### Comparaciones Type-Aware
+
+Las comparaciones respetan los tipos detectados:
+```sql
+-- Comparación numérica (no lexicográfica)
+SELECT * FROM data WHERE age > 25;  -- 30 > 25 ✅, "3" > "25" ❌
+
+-- Comparación de texto
+SELECT * FROM users WHERE name >= 'M';  -- Ordenamiento alfabético
+
+-- Comparación booleana
+SELECT * FROM products WHERE active = true;
+```
+
+#### Seguridad y Límites
+
+**File Path Sandboxing:**
+- ❌ Bloqueado: Directorios del sistema (`/etc`, `/sys`, `/proc`, `/dev`, `/root`, `/boot`)
+- ❌ Bloqueado: Path traversal (`..` patterns)
+- ❌ Bloqueado: Dispositivos/sockets (solo archivos regulares)
+- ✅ Permitido: Archivos locales y rutas relativas
+
+**SQL Injection Prevention:**
+- Validación de nombres de tabla (solo alfanuméricos, `_`, `-`)
+- Escapado de valores en IMPORT (`'` → `''`)
+- Sanitización de nombres de columna
+
+**Resource Limits:**
+- Tamaño máximo de archivo: 100MB
+- Filas máximas por CSV: 1,000,000
+- Timeout de query: No implementado (los límites de tamaño/filas proveen protección)
+
+#### Limitaciones Actuales
+
+- ❌ No soporta JOIN entre archivos CSV (planeado para M5)
+- ❌ No soporta GROUP BY con agregaciones (solo una agregación por query)
+- ❌ WHERE no soporta LIKE, IN, BETWEEN, IS NULL (planeado para M5)
+- ❌ No soporta subconsultas
+- ❌ Las agregaciones convierten todos los numéricos a REAL (f64)
+- ❌ No soporta expresiones complejas en SELECT (ej: `SELECT price * 1.1 AS price_with_tax`)
+
+#### Ejemplos Completos
+
+**Análisis de Ventas:**
+```sql
+-- Cargar archivo CSV
+USE 'sales_2024.csv' AS sales;
+
+-- Total de ventas
+SELECT COUNT(*) FROM sales;
+
+-- Ventas superiores a $1000
+SELECT * FROM sales WHERE amount > 1000 ORDER BY amount DESC;
+
+-- Suma de ventas por trimestre (manual)
+SELECT SUM(amount) FROM sales WHERE month IN (1, 2, 3);  -- Q1
+
+-- Top 10 ventas
+SELECT * FROM sales ORDER BY amount DESC LIMIT 10;
+
+-- Promedio de ventas en región
+SELECT AVG(amount) FROM sales WHERE region = 'West';
+```
+
+**Análisis de Empleados:**
+```sql
+-- Cargar empleados
+USE 'employees.csv' AS emp;
+
+-- Empleados IT con salario alto
+SELECT * FROM employees WHERE dept = 'IT' AND salary > 80000 ORDER BY salary DESC;
+
+-- Conteo por departamento (manual para cada dept)
+SELECT COUNT(*) FROM employees WHERE dept = 'Engineering';
+
+-- Rango salarial
+SELECT MIN(salary) FROM employees;
+SELECT MAX(salary) FROM employees;
+SELECT AVG(salary) FROM employees;
 ```
 
 ### CSV Backend Implementation
