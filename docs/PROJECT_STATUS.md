@@ -1488,13 +1488,198 @@ EXPORT TO 'resumen_ar.json' FORMAT JSON;
 
 ---
 
-## Próximos Pasos (Post-M6)
+## 🎯 Milestone 7 - "SCRIPT" [PLANIFICADO]
 
-Ver **Milestone 7 - "SCRIPT"** para extensiones de scripting:
-- `IF/THEN`, `FOR` loops
-- `MACRO`, `CALL` para reutilización
-- `RUNSUM()`, `GRAPH BAR` para análisis visual
-- `SAVE/LOAD SESSION` para persistencia de estado
+**Fecha de Inicio:** 24 de diciembre de 2025 (Post-M6)
+**Duración:** 6 semanas (24 dic 2025 — 3 feb 2026)
+**Versión Target:** v0.7.0
+**Estado:** 📋 Planificado
+
+### Vision Statement
+
+> **"Convertir RQL en un 4GL completo con capacidades de scripting"**
+> **"De query language a programming language para datos"**
+
+### Objetivo Estratégico
+
+Agregar capacidades de scripting 4GL a Noctra, transformándolo de un entorno de queries a un lenguaje de programación completo para análisis de datos.
+
+### ¿Qué es parte de M7 (NO M6)?
+
+| Extensión | Descripción | Complejidad |
+|-----------|-------------|-------------|
+| `IF/THEN/ELSE` | Control de flujo condicional | Medium |
+| `FOR ... IN ... DO` | Bucles sobre resultados | Medium |
+| `MACRO ... AS ... END` | Definir macros reutilizables | High |
+| `CALL macro(args)` | Invocar macros | Medium |
+| `RUNSUM()`, `RUNAVG()` | Funciones de ventana simplificadas | Low |
+| `GRAPH BAR`, `GRAPH LINE` | Visualización ASCII | Medium |
+| `SAVE SESSION`, `LOAD SESSION` | Persistencia de estado | Medium |
+| `PRINT "msg"` | Debug output | Low |
+| `PIPE TO 'cmd'` | Canalización a shell | Low |
+| `IMPORT MACRO FROM 'file'` | Librerías de macros | High |
+
+**IMPORTANTE:** Estas características NO son parte de M6. M6 se enfoca exclusivamente en DuckDB integration.
+
+### Fases de Implementación (6 Semanas)
+
+#### **FASE 1: SCRIPTING CORE** (Semana 1)
+- [ ] `IF/THEN/ELSE` control flow
+- [ ] `FOR...IN...DO` loops
+- [ ] `PRINT` debug output
+
+**Ejemplo:**
+```rql
+IF #pais = 'AR' THEN
+  PRINT "Procesando Argentina";
+  USE 'ventas_ar.csv' AS v;
+ELSE
+  USE 'ventas_latam.csv' AS v;
+END;
+
+FOR region IN (SELECT DISTINCT region FROM v) DO
+  PRINT "Región:", region.region;
+END;
+```
+
+#### **FASE 2: MACROS & REUTILIZACIÓN** (Semana 2)
+- [ ] `MACRO name(params) AS ... END`
+- [ ] `CALL macro(args)`
+- [ ] `IMPORT MACRO FROM 'file'`
+
+**Ejemplo:**
+```rql
+MACRO top_productos(n, region) AS
+  SELECT producto, SUM(total) AS ventas
+  FROM ventas
+  WHERE region = :region
+  GROUP BY producto
+  ORDER BY ventas DESC
+  LIMIT :n;
+END;
+
+CALL top_productos(10, 'LATAM');
+
+IMPORT MACRO FROM 'analytics.rql';
+```
+
+#### **FASE 3: AGREGADOS & VISUALIZACIÓN** (Semana 3)
+- [ ] `RUNSUM()`, `RUNAVG()`, `RUNCOUNT()`
+- [ ] `GRAPH BAR FROM query`
+- [ ] `GRAPH LINE FROM query`
+- [ ] `GRAPH HIST FROM query`
+
+**Ejemplo:**
+```rql
+SELECT
+  fecha,
+  ventas,
+  RUNSUM(ventas) AS acumulado
+FROM ventas_diarias
+ORDER BY fecha;
+
+GRAPH BAR FROM (
+  SELECT region, SUM(total) FROM ventas GROUP BY region
+);
+```
+
+#### **FASE 4: SESIÓN PERSISTENTE** (Semana 4)
+- [ ] `SAVE SESSION 'file.toml'`
+- [ ] `LOAD SESSION 'file.toml'`
+- [ ] Auto-save al salir
+- [ ] Prompt de restauración al iniciar
+
+**Ejemplo:**
+```rql
+LET pais = 'AR';
+USE 'ventas.csv' AS v;
+MACRO top(n) AS SELECT * FROM v LIMIT :n; END;
+
+SAVE SESSION 'mi_sesion.toml';
+
+-- Nueva sesión
+LOAD SESSION 'mi_sesion.toml';
+CALL top(5);  -- Todo restaurado
+```
+
+#### **FASE 5: SALIDA & CANALIZACIÓN** (Semana 5)
+- [ ] `query PIPE TO 'cmd'`
+- [ ] `query > 'file'`, `query >> 'file'`
+- [ ] Validación de seguridad
+
+**Ejemplo:**
+```rql
+SELECT * FROM logs
+WHERE level = 'ERROR'
+PIPE TO 'grep "database"';
+
+SELECT * FROM ventas > 'reporte.txt';
+```
+
+#### **FASE 6: RELEASE v0.7.0** (Semana 6)
+- [ ] Tag `v0.7.0`
+- [ ] `RQL_SCRIPTING.md` manual completo
+- [ ] `MIGRATION_M6_TO_M7.md`
+- [ ] `demo_full_script.rql`
+- [ ] Benchmarks de scripting
+- [ ] CHANGELOG.md
+
+### Ejemplo Final Completo (M7)
+
+```rql
+-- demo_full_script.rql
+IMPORT MACRO FROM 'analytics.rql';
+
+LET pais = 'AR';
+USE 'ventas_2025.csv' AS v;
+
+MACRO resumen(pais) AS
+  SELECT region, SUM(total) AS total
+  FROM v
+  WHERE pais = :pais
+  GROUP BY region
+  ORDER BY total DESC;
+END;
+
+CALL resumen(#pais);
+GRAPH BAR FROM resumen(#pais);
+
+FOR region IN (SELECT DISTINCT region FROM v WHERE pais = #pais) DO
+  PRINT "Procesando:", region.region;
+  EXPORT (SELECT * FROM v WHERE pais = #pais AND region = region.region)
+  TO CONCAT('region_', region.region, '.json')
+  FORMAT JSON;
+END;
+
+SAVE SESSION 'analisis_ar_2025.toml';
+```
+
+### Criterios de Éxito
+
+**Funcionales:**
+- ✅ IF/THEN/ELSE con condiciones complejas
+- ✅ FOR itera sobre resultados
+- ✅ MACRO define y llama correctamente
+- ✅ IMPORT MACRO carga desde archivos
+- ✅ RUNSUM traduce a window functions
+- ✅ GRAPH BAR renderiza ASCII
+- ✅ SAVE/LOAD SESSION preserva estado
+- ✅ PIPE TO envía a shell
+
+**Performance:**
+- ✅ Macros expanden en <1ms
+- ✅ FOR sobre 1000 filas: <100ms
+- ✅ Session save/load: <500ms
+- ✅ GRAPH rendering: <50ms
+
+**Calidad:**
+- ✅ Test coverage: >80%
+- ✅ Zero clippy warnings
+- ✅ Documentación completa
+
+### Documentación M7
+
+Ver [M7_IMPLEMENTATION_PLAN.md](M7_IMPLEMENTATION_PLAN.md) para detalles completos de implementación.
 
 ---
 
