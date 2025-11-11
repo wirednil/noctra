@@ -1,8 +1,9 @@
 # Estado del Proyecto Noctra
 
 **Última actualización:** 2025-11-11
-**Branch activo:** `claude/validate-markdown-next-steps-011CV2JHU4XekbnxRXUxE9H5`
-**Versión:** 0.2.0 (M4 Completado)
+**Branch activo:** `claude/duckdb-integration-analysis-011CV2uozdTvq4uXr2JRRb68`
+**Versión:** 0.2.0 (M5 Completado)
+**Próximo Release:** v0.6.0 "FABRIC" (M6 - En Progreso)
 
 ---
 
@@ -10,9 +11,9 @@
 
 Noctra es un entorno SQL interactivo moderno escrito en Rust con filosofía 4GL, proporcionando una experiencia profesional de consulta SQL con formularios declarativos y TUI avanzado.
 
-**Progreso General:** M1 ✅ | M2 ✅ | M3 ✅ | M3.5 ✅ | **M4 ✅** | M5 ✅ | M6 🎯
+**Progreso General:** M1 ✅ | M2 ✅ | M3 ✅ | M3.5 ✅ | M4 ✅ | M5 ✅ | **M6 🚧** | M7 📋
 
-| Milestone | Estado | Progreso | Último Commit |
+| Milestone | Estado | Progreso | Fecha/Commit |
 |-----------|--------|----------|---------------|
 | **M0: Foundation** | ✅ Completado | 100% | 2025-01-12 |
 | **M1: Core + Parser** | ✅ Completado | 100% | 88805e8 |
@@ -21,7 +22,8 @@ Noctra es un entorno SQL interactivo moderno escrito en Rust con filosofía 4GL,
 | **M3.5: CSV/NQL Hotfix** | ✅ Completado | 100% | dbddebc |
 | **M4: Advanced Features** | ✅ Completado | 100% | 83b100d |
 | **M5: Extended Capabilities** | ✅ Completado | 100% | 2025-11-11 |
-| **M6: Noctra 2.0 "FABRIC"** | 🎯 Planificado | 0% | - |
+| **M6: Noctra(🦆) "FABRIC"** | 🚧 En Progreso | 0% | 2025-11-11 (Fase 1) |
+| **M7: "SCRIPT" (Opcional)** | 📋 Planificado | 0% | Post-M6 |
 
 **Total Tests:** 29 pasando (100%)
 **Build:** Release OK (3 warnings menores en core)
@@ -1156,62 +1158,343 @@ Con M5 completado, Noctra ahora tiene:
 
 ---
 
-## 📋 Milestone 6 - Noctra 2.0 "FABRIC" [PLANIFICADO]
+## 🎯 Milestone 6 - Noctra(🦆) "FABRIC" [EN PROGRESO]
 
-### Objetivos
+**Fecha de Inicio:** 11 de noviembre de 2025
+**Duración:** 6 semanas (11 nov — 23 dic 2025)
+**Versión Target:** v0.6.0
+**Estado:** 📋 Fase 1 - Fundación
 
-Integración de DuckDB como motor de consultas ad hoc para análisis de archivos sin staging.
+### Vision Statement
 
-#### 5.1 Performance Optimization
-- [ ] Profiling completo
-- [ ] Optimización de queries lentas
-- [ ] Reducción de allocations
-- [ ] Async I/O optimizado
-- [ ] Caché inteligente
+> **"Transformar Noctra de 'entorno SQL interactivo' a 'entorno 4GL de análisis de datos sobre DuckDB'"**
+> **"Los archivos son tablas, el staging desaparece, y el análisis es instantáneo"**
 
-#### 5.2 Error Handling
-- [ ] Error messages mejorados
-- [ ] Recovery automático
-- [ ] Logging estructurado
-- [ ] Crash reports
-- [ ] Telemetría opcional
+### Objetivo Estratégico
 
-#### 5.3 Configuration
-- [ ] Archivo de configuración TOML
-- [ ] Configuración por usuario
-- [ ] Temas guardables
-- [ ] Perfiles de conexión
-- [ ] Variables de entorno
+Reemplazar el backend CSV manual con DuckDB como motor universal, habilitando:
+- 🦆 **Queries directos sobre archivos** sin IMPORT/staging
+- ⚡ **Performance 10x superior** con zero-copy y lectura columnar
+- 🔗 **JOINs cross-source** nativos (CSV + Parquet + SQLite)
+- 📦 **Soporte Parquet** para datasets grandes
+- 🎯 **Modo híbrido por defecto**: DuckDB para archivos, SQLite para persistencia
 
-#### 5.4 Testing
-- [ ] Coverage > 80%
-- [ ] Integration tests completos
-- [ ] E2E tests con TUI
-- [ ] Benchmark suite
-- [ ] Stress testing
+### Transformación Radical
 
-#### 5.5 Documentation
-- [ ] User manual completo
-- [ ] Developer guide
-- [ ] API documentation
-- [ ] Video tutorials
-- [ ] FAQ
+| Antes (Pre-M6) | Después (M6 - FABRIC) |
+|----------------|------------------------|
+| `IMPORT` → staging → query | `USE 'file.csv'` → query directo |
+| `csv_backend.rs` (900+ líneas) | **Eliminado** — DuckDB lo reemplaza |
+| JOIN entre CSV imposible | JOIN nativo entre CSV, Parquet, SQLite |
+| Máximo 100MB por archivo | Streaming ilimitado (zero-copy) |
+| SQLite como motor único | **DuckDB como motor por defecto** |
+| `MAP`, `FILTER` redundantes | **Deprecados** — SQL estándar es superior |
 
-#### 5.6 Packaging
-- [ ] Binarios para Linux/macOS/Windows
-- [ ] Docker image
-- [ ] Homebrew formula
-- [ ] Snap/Flatpak
-- [ ] Instaladores
+---
 
-#### 5.7 CI/CD
-- [ ] GitHub Actions completo
-- [ ] Release automation
-- [ ] Changelog automático
-- [ ] Version bumping
-- [ ] Security scanning
+## Fases de Implementación (6 Semanas)
 
-**Estimado:** 4-6 semanas
+### **FASE 1: FUNDACIÓN — Integración DuckDB** (Semana 1)
+**Objetivo:** Reemplazar el backend CSV manual con DuckDB como motor universal.
+
+**Tareas Principales:**
+- [ ] Crear crate `noctra-duckdb` con estructura base
+- [ ] Implementar `DuckDBEngine` implementando trait `DataSource`
+- [ ] `USE 'file.csv' AS alias` → `CREATE VIEW alias AS SELECT * FROM read_csv_auto('path')`
+- [ ] Soporte nativo: CSV, Parquet, JSON (DuckDB functions)
+- [ ] **Eliminar** `crates/core/src/csv_backend.rs` (deprecado)
+- [ ] Feature flag `duckdb-engine` para compilación condicional
+- [ ] Tests básicos: cargar CSV, query simple, schema introspection
+
+**Resultado Esperado:**
+```sql
+USE 'ventas.csv' AS v;
+SELECT * FROM v LIMIT 5;
+-- DuckDB ejecuta sin staging
+```
+
+**Archivos Clave:**
+```
+crates/noctra-duckdb/
+  ├── Cargo.toml
+  └── src/
+      ├── lib.rs
+      ├── source.rs       # DuckDBSource impl
+      ├── engine.rs       # Query execution
+      └── extensions.rs   # Parquet, JSON support
+```
+
+---
+
+### **FASE 2: MOTOR HÍBRIDO — DuckDB + SQLite** (Semana 2)
+**Objetivo:** Modo híbrido por defecto: DuckDB para archivos, SQLite para persistencia.
+
+**Tareas Principales:**
+- [ ] Implementar `QueryEngine::Hybrid { duckdb, sqlite }`
+- [ ] Routing inteligente: `*.csv`, `*.parquet` → DuckDB; `*.db` → SQLite
+- [ ] `ATTACH` automático: `ATTACH 'db.db' AS sqlite_db (TYPE SQLITE)`
+- [ ] `JOIN` cross-source: CSV + SQLite sin `IMPORT`
+- [ ] Configuración `~/.config/noctra/config.toml`
+  ```toml
+  [engine]
+  default = "hybrid"
+  ```
+- [ ] Tests: cross-source JOIN, routing logic, ATTACH
+
+**Resultado Esperado:**
+```sql
+USE 'ventas.csv' AS v;
+USE 'clientes.db' AS c;
+
+SELECT c.nombre, v.total
+FROM v JOIN c.clientes ON v.id = c.id;
+-- DuckDB une ambos sin staging
+```
+
+---
+
+### **FASE 3: RQL 4GL — Extensionalidad Nativa** (Semana 3)
+**Objetivo:** Consolidar las extensiones únicas de Noctra sobre DuckDB.
+
+**Extensiones a Mantener:**
+- [x] `LET var = valor` — Variables de sesión
+- [x] `#var` en SQL — Interpolación de variables
+- [x] `SHOW VARS` — Tabla de variables
+- [x] `SHOW SOURCES` — Catálogo unificado de fuentes
+- [x] `DESCRIBE source.table` — Introspección de esquema
+- [x] `EXPORT TO 'file.json'` — Sintaxis humana para COPY
+
+**Extensiones a Deprecar:**
+- [ ] `MAP`, `FILTER` → **DEPRECATE** (redundante con SQL estándar)
+- [ ] `OUTPUT TO` → **DEPRECATE** (reemplazado por `EXPORT`)
+- [ ] `FORM LOAD` en parser → **Mover a `noctra-tui`** (no pertenece al parser)
+
+**Tareas:**
+- [ ] Actualizar parser para deprecar `MAP`, `FILTER`, `OUTPUT TO`
+- [ ] Agregar warnings de deprecación
+- [ ] Documentar migración en `MIGRATION.md`
+- [ ] Tests: validar que `LET`, `#var`, `SHOW VARS` funcionan con DuckDB
+
+**Resultado Esperado:**
+```sql
+LET pais = 'AR';
+SHOW VARS;
+-- pais = 'AR'
+
+SELECT * FROM 'ventas.csv' WHERE pais = #pais;
+EXPORT TO 'ar.json' FORMAT JSON;
+```
+
+---
+
+### **FASE 4: EXPORT & OUTPUT — Unified Output Layer** (Semana 4)
+**Objetivo:** `EXPORT` como comando maestro, `OUTPUT TO` eliminado.
+
+**Tareas Principales:**
+- [ ] `EXPORT query TO 'file' FORMAT csv/json/parquet`
+  - Traduce a `COPY (...) TO 'file' (FORMAT ...)`
+- [ ] Soporte multi-formato: CSV, JSON, Parquet
+- [ ] `EXPORT * TO 'dir/'` — Export batch (opcional)
+- [ ] Deprecar completamente `OUTPUT TO`
+- [ ] `PRINT "msg"` — Mantener para debug
+- [ ] Tests: export CSV, JSON, Parquet; validar formato
+
+**Resultado Esperado:**
+```sql
+EXPORT (SELECT * FROM 'ventas.parquet') TO 'out.csv' FORMAT CSV;
+EXPORT (SELECT * FROM clientes WHERE activo = 1) TO 'activos.json' FORMAT JSON;
+```
+
+---
+
+### **FASE 5: TUI & UX — Data Fabric Experience** (Semana 5)
+**Objetivo:** Interfaz que refleje el nuevo poder de DuckDB.
+
+**Tareas Principales:**
+- [ ] Status bar dinámico con engine indicator
+  ```
+  Engine: 🦆 DuckDB | Source: ventas.csv (CSV) | Memory: 45MB | 8ms
+  ```
+- [ ] Panel `SOURCES` con tipo, tamaño, filas
+  ```
+  ┌──────────┬─────────┬─────────┬──────────┐
+  │ Alias    │ Type    │ Size    │ Rows     │
+  ├──────────┼─────────┼─────────┼──────────┤
+  │ ventas   │ 🦆 CSV  │ 1.2GB   │ 1.2M     │
+  │ clientes │ 📦 SQLite│ 45MB   │ 50K      │
+  └──────────┴─────────┴─────────┴──────────┘
+  ```
+- [ ] `F5: Run` ejecuta en engine correcto (auto-detect)
+- [ ] Autocomplete de tablas desde DuckDB
+- [ ] `noctra 'file.csv'` — Abre con `USE` automático
+- [ ] Tests: TUI rendering, status bar, autocomplete
+
+**Resultado Esperado:**
+- Status bar muestra engine activo y fuente actual
+- Panel de sources lista todas las fuentes registradas
+- CLI acepta archivos directamente: `noctra ventas.csv`
+
+---
+
+### **FASE 6: RELEASE & DOCUMENTACIÓN — v0.6.0 "FABRIC"** (Semana 6)
+**Objetivo:** Lanzamiento estable, documentación completa, migración clara.
+
+**Tareas Principales:**
+- [ ] Tag `v0.6.0` oficial
+- [ ] `RQL_EXTENSIONS.md` — Manual de extensiones nativas
+  - Documentar `LET`, `#var`, `SHOW VARS`, `SHOW SOURCES`, `EXPORT`
+  - Marcar `MAP`, `FILTER`, `OUTPUT TO` como deprecados
+- [ ] `MIGRATION.md` — Guía de migración de M5 a M6
+  - Cómo migrar queries que usaban `csv_backend`
+  - Alternativas a `MAP`, `FILTER`
+- [ ] Benchmarks: 1GB CSV: DuckDB vs SQLite
+  - Cargar CSV
+  - JOIN cross-source
+  - GROUP BY con agregaciones
+- [ ] Feature flags en `Cargo.toml`
+  - `duckdb-engine` (default)
+  - `sqlite-fallback`
+- [ ] CHANGELOG.md con breaking changes
+- [ ] Tests de regresión completos
+
+**Documentación a Crear:**
+```
+docs/
+  ├── RQL_EXTENSIONS.md        # ← NUEVO
+  ├── MIGRATION.md             # ← NUEVO
+  └── M6_IMPLEMENTATION_PLAN.md # ← NUEVO
+```
+
+---
+
+## Depreciaciones y Eliminaciones
+
+### **Código a Eliminar:**
+- [ ] `crates/core/src/csv_backend.rs` (900+ líneas) → **DuckDB lo reemplaza**
+- [ ] Tests relacionados con `csv_backend.rs`
+- [ ] Dependencia `csv` crate (si no se usa en otro lugar)
+
+### **Comandos a Deprecar:**
+- [ ] `MAP expression` → **Use SQL SELECT** con expresiones
+- [ ] `FILTER condition` → **Use SQL WHERE** clause
+- [ ] `OUTPUT TO 'file'` → **Use EXPORT TO 'file' FORMAT ...**
+- [ ] `IMPORT 'file' AS table` → **Use USE 'file' AS alias** (opcional mantener para staging)
+
+### **Sintaxis Nueva:**
+- [x] `USE 'file.csv' AS alias` — Ya implementado en M3.5, ahora usa DuckDB
+- [ ] `EXPORT query TO 'file' FORMAT format` — Nueva sintaxis unificada
+- [ ] `SELECT * FROM 'file.csv'` — Query directo sin registro (DuckDB native)
+
+---
+
+## Requerimientos Técnicos
+
+### **Nuevo Crate: `noctra-duckdb`**
+```toml
+[package]
+name = "noctra-duckdb"
+version = "0.6.0"
+
+[dependencies]
+duckdb = { version = "1.1", features = ["bundled", "parquet", "json"] }
+noctra-core = { path = "../noctra-core" }
+anyhow = "1.0"
+log = "0.4"
+```
+
+### **Trait `DataSource` → `DuckDBSource`**
+```rust
+pub struct DuckDBSource {
+    conn: duckdb::Connection,
+    name: String,
+}
+
+impl DataSource for DuckDBSource {
+    fn query(&self, sql: &str, params: &Parameters) -> Result<ResultSet>;
+    fn schema(&self) -> Result<Vec<TableInfo>>;
+    fn source_type(&self) -> SourceType;
+    fn name(&self) -> &str;
+}
+```
+
+### **Feature Flags**
+```toml
+[features]
+default = ["duckdb-engine"]
+duckdb-engine = ["noctra-duckdb"]
+sqlite-fallback = []
+```
+
+### **Configuración**
+```toml
+# ~/.config/noctra/config.toml
+[engine]
+default = "hybrid"  # duckdb, sqlite, hybrid
+
+[duckdb]
+temp_dir = "/tmp/noctra-duckdb"
+memory_limit = "2GB"
+threads = 4
+
+[duckdb.extensions]
+auto_install = true
+enabled = ["parquet", "json"]
+```
+
+---
+
+## Criterios de Éxito
+
+### **Funcionales:**
+- ✅ `USE 'file.csv' AS alias` carga archivo sin staging
+- ✅ `SELECT * FROM 'file.csv'` funciona directamente
+- ✅ JOIN entre CSV y SQLite sin IMPORT
+- ✅ EXPORT a CSV, JSON, Parquet
+- ✅ Modo híbrido por defecto (DuckDB + SQLite)
+- ✅ `LET`, `#var`, `SHOW VARS` funcionan con DuckDB
+
+### **Performance:**
+- ✅ CSV 1GB carga en <2s (vs ~30s con csv_backend)
+- ✅ JOIN 100K rows: <1s
+- ✅ GROUP BY con agregaciones: <500ms
+- ✅ Memoria: <200MB para 1GB CSV (streaming)
+
+### **Calidad:**
+- ✅ Test coverage: >85%
+- ✅ Zero clippy warnings
+- ✅ Documentación completa (RQL_EXTENSIONS.md, MIGRATION.md)
+- ✅ Benchmarks publicados
+
+---
+
+## Comando Final del Usuario
+
+```bash
+noctra 'ventas.parquet'
+```
+
+```sql
+-- Automático: USE 'ventas.parquet' AS v
+LET pais = 'AR';
+
+SELECT region, SUM(total) AS total
+FROM v
+WHERE pais = #pais
+GROUP BY region
+ORDER BY total DESC;
+
+EXPORT TO 'resumen_ar.json' FORMAT JSON;
+```
+
+---
+
+## Próximos Pasos (Post-M6)
+
+Ver **Milestone 7 - "SCRIPT"** para extensiones de scripting:
+- `IF/THEN`, `FOR` loops
+- `MACRO`, `CALL` para reutilización
+- `RUNSUM()`, `GRAPH BAR` para análisis visual
+- `SAVE/LOAD SESSION` para persistencia de estado
 
 ---
 
