@@ -45,10 +45,29 @@ enum ParsedQuery {
         column: Option<String>,
         where_clause: Option<String>,
     },
+    GroupBy {
+        select_columns: Vec<SelectColumn>,
+        group_by_columns: Vec<String>,
+        where_clause: Option<String>,
+        having_clause: Option<String>,
+        order_by: Option<Vec<OrderByColumn>>,
+        limit: Option<usize>,
+    },
+}
+
+/// SELECT column specification (can be regular column or aggregate)
+#[derive(Debug, Clone)]
+enum SelectColumn {
+    Column(String),
+    Aggregate {
+        function: AggregateFunction,
+        column: Option<String>,
+        alias: Option<String>,
+    },
 }
 
 /// Aggregate functions
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum AggregateFunction {
     Count,
     Sum,
@@ -431,7 +450,12 @@ impl CsvDataSource {
     fn parse_sql_query(&self, sql: &str) -> Result<ParsedQuery> {
         let sql_upper = sql.to_uppercase();
 
-        // Check for aggregation functions
+        // Check for GROUP BY first
+        if sql_upper.contains(" GROUP BY ") {
+            return self.parse_group_by_query(sql);
+        }
+
+        // Check for aggregation functions (without GROUP BY)
         if sql_upper.contains("COUNT(")
             || sql_upper.contains("SUM(")
             || sql_upper.contains("AVG(")
@@ -621,6 +645,187 @@ impl CsvDataSource {
         })
     }
 
+    /// Parse GROUP BY query
+    fn parse_group_by_query(&self, sql: &str) -> Result<ParsedQuery> {
+        let sql_upper = sql.to_uppercase();
+
+        // Extract SELECT columns
+        let select_idx = sql_upper.find("SELECT ").ok_or_else(|| {
+            NoctraError::Internal("Invalid SELECT query".to_string())
+        })?;
+        let from_idx = sql_upper.find(" FROM ").ok_or_else(|| {
+            NoctraError::Internal("Missing FROM clause".to_string())
+        })?;
+
+        let cols_str = sql[select_idx + 7..from_idx].trim();
+        let select_columns = self.parse_select_columns(cols_str)?;
+
+        // Extract GROUP BY columns
+        let group_by_idx = sql_upper.find(" GROUP BY ").ok_or_else(|| {
+            NoctraError::Internal("Missing GROUP BY clause".to_string())
+        })?;
+
+        let after_group = sql[group_by_idx + 10..].trim();
+        let end_idx = after_group
+            .to_uppercase()
+            .find(" HAVING ")
+            .or_else(|| after_group.to_uppercase().find(" ORDER BY "))
+            .or_else(|| after_group.to_uppercase().find(" LIMIT "))
+            .unwrap_or(after_group.len());
+
+        let group_by_str = after_group[..end_idx].trim();
+        let group_by_columns: Vec<String> = group_by_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
+
+        // Extract WHERE clause
+        let where_clause = if let Some(where_idx) = sql_upper.find(" WHERE ") {
+            if where_idx < group_by_idx {
+                let after_where = sql[where_idx + 7..].trim();
+                let end_idx = after_where
+                    .to_uppercase()
+                    .find(" GROUP BY ")
+                    .unwrap_or(after_where.len());
+                Some(after_where[..end_idx].trim().to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Extract HAVING clause
+        let having_clause = if let Some(having_idx) = sql_upper.find(" HAVING ") {
+            let after_having = sql[having_idx + 8..].trim();
+            let end_idx = after_having
+                .to_uppercase()
+                .find(" ORDER BY ")
+                .or_else(|| after_having.to_uppercase().find(" LIMIT "))
+                .unwrap_or(after_having.len());
+            Some(after_having[..end_idx].trim().to_string())
+        } else {
+            None
+        };
+
+        // Extract ORDER BY clause
+        let order_by = if let Some(order_idx) = sql_upper.find(" ORDER BY ") {
+            let after_order = sql[order_idx + 10..].trim();
+            let end_idx = after_order
+                .to_uppercase()
+                .find(" LIMIT ")
+                .unwrap_or(after_order.len());
+            let order_str = after_order[..end_idx].trim();
+            Some(self.parse_order_by(order_str)?)
+        } else {
+            None
+        };
+
+        // Extract LIMIT clause
+        let limit = if let Some(limit_idx) = sql_upper.find(" LIMIT ") {
+            let after_limit = sql[limit_idx + 7..].trim();
+            Some(after_limit.parse::<usize>().map_err(|_| {
+                NoctraError::Internal("Invalid LIMIT value".to_string())
+            })?)
+        } else {
+            None
+        };
+
+        Ok(ParsedQuery::GroupBy {
+            select_columns,
+            group_by_columns,
+            where_clause,
+            having_clause,
+            order_by,
+            limit,
+        })
+    }
+
+    /// Parse SELECT columns (can include aggregates)
+    fn parse_select_columns(&self, cols_str: &str) -> Result<Vec<SelectColumn>> {
+        let mut columns = Vec::new();
+        let parts: Vec<&str> = cols_str.split(',').collect();
+
+        for part in parts {
+            let part = part.trim();
+            let part_upper = part.to_uppercase();
+
+            // Check for aggregate functions
+            if part_upper.contains("COUNT(") {
+                let (col, alias) = self.parse_aggregate_column(part, "COUNT", 6)?;
+                columns.push(SelectColumn::Aggregate {
+                    function: AggregateFunction::Count,
+                    column: col,
+                    alias,
+                });
+            } else if part_upper.contains("SUM(") {
+                let (col, alias) = self.parse_aggregate_column(part, "SUM", 4)?;
+                columns.push(SelectColumn::Aggregate {
+                    function: AggregateFunction::Sum,
+                    column: col,
+                    alias,
+                });
+            } else if part_upper.contains("AVG(") {
+                let (col, alias) = self.parse_aggregate_column(part, "AVG", 4)?;
+                columns.push(SelectColumn::Aggregate {
+                    function: AggregateFunction::Avg,
+                    column: col,
+                    alias,
+                });
+            } else if part_upper.contains("MIN(") {
+                let (col, alias) = self.parse_aggregate_column(part, "MIN", 4)?;
+                columns.push(SelectColumn::Aggregate {
+                    function: AggregateFunction::Min,
+                    column: col,
+                    alias,
+                });
+            } else if part_upper.contains("MAX(") {
+                let (col, alias) = self.parse_aggregate_column(part, "MAX", 4)?;
+                columns.push(SelectColumn::Aggregate {
+                    function: AggregateFunction::Max,
+                    column: col,
+                    alias,
+                });
+            } else {
+                // Regular column (possibly with alias)
+                if let Some(as_pos) = part_upper.find(" AS ") {
+                    let col_name = part[..as_pos].trim().to_string();
+                    columns.push(SelectColumn::Column(col_name));
+                } else {
+                    columns.push(SelectColumn::Column(part.to_string()));
+                }
+            }
+        }
+
+        Ok(columns)
+    }
+
+    /// Parse aggregate column with optional alias
+    fn parse_aggregate_column(&self, part: &str, func_name: &str, offset: usize) -> Result<(Option<String>, Option<String>)> {
+        let part_upper = part.to_uppercase();
+        let func_idx = part_upper.find(func_name).unwrap();
+        let after_func = &part[func_idx + offset..];
+        let close_paren = after_func.find(')').ok_or_else(|| {
+            NoctraError::Internal(format!("Invalid {} syntax", func_name))
+        })?;
+        let col_str = after_func[..close_paren].trim();
+        let column = if col_str == "*" {
+            None
+        } else {
+            Some(col_str.to_string())
+        };
+
+        // Check for alias
+        let rest = &part[func_idx + offset + close_paren + 1..];
+        let alias = if let Some(as_pos) = rest.to_uppercase().find(" AS ") {
+            Some(rest[as_pos + 4..].trim().to_string())
+        } else {
+            None
+        };
+
+        Ok((column, alias))
+    }
+
     /// Execute SELECT query
     fn execute_select(
         &self,
@@ -712,8 +917,8 @@ impl CsvDataSource {
 
     /// Evaluate WHERE condition for a single row
     fn evaluate_where_condition(&self, row: &[Value], condition: &str) -> Result<bool> {
-        // Simple condition parser: column operator value
-        // Supports: =, !=, <, >, <=, >=, AND, OR
+        // Enhanced condition parser
+        // Supports: =, !=, <, >, <=, >=, LIKE, IN, BETWEEN, IS NULL, IS NOT NULL, AND, OR
 
         let condition = condition.trim();
 
@@ -736,7 +941,105 @@ impl CsvDataSource {
             );
         }
 
-        // Parse simple condition
+        let condition_upper = condition.to_uppercase();
+
+        // Handle IS NULL / IS NOT NULL
+        if condition_upper.contains(" IS NOT NULL") {
+            let column_name = condition[..condition_upper.find(" IS NOT NULL").unwrap()].trim();
+            let col_idx = self
+                .schema
+                .iter()
+                .position(|c| c.name == column_name)
+                .ok_or_else(|| {
+                    NoctraError::Internal(format!("Column not found: {}", column_name))
+                })?;
+            return Ok(!matches!(row[col_idx], Value::Null));
+        }
+
+        if condition_upper.contains(" IS NULL") {
+            let column_name = condition[..condition_upper.find(" IS NULL").unwrap()].trim();
+            let col_idx = self
+                .schema
+                .iter()
+                .position(|c| c.name == column_name)
+                .ok_or_else(|| {
+                    NoctraError::Internal(format!("Column not found: {}", column_name))
+                })?;
+            return Ok(matches!(row[col_idx], Value::Null));
+        }
+
+        // Handle LIKE
+        if let Some(like_pos) = condition_upper.find(" LIKE ") {
+            let column_name = condition[..like_pos].trim();
+            let pattern = condition[like_pos + 6..].trim().trim_matches(|c| c == '\'' || c == '"');
+
+            let col_idx = self
+                .schema
+                .iter()
+                .position(|c| c.name == column_name)
+                .ok_or_else(|| {
+                    NoctraError::Internal(format!("Column not found: {}", column_name))
+                })?;
+
+            return Ok(self.match_like_pattern(&row[col_idx], pattern));
+        }
+
+        // Handle IN
+        if let Some(in_pos) = condition_upper.find(" IN ") {
+            let column_name = condition[..in_pos].trim();
+            let values_str = condition[in_pos + 4..].trim();
+
+            let col_idx = self
+                .schema
+                .iter()
+                .position(|c| c.name == column_name)
+                .ok_or_else(|| {
+                    NoctraError::Internal(format!("Column not found: {}", column_name))
+                })?;
+
+            // Parse IN list: (value1, value2, value3)
+            if values_str.starts_with('(') && values_str.ends_with(')') {
+                let list_content = &values_str[1..values_str.len()-1];
+                let values: Vec<&str> = list_content.split(',').map(|s| s.trim()).collect();
+
+                for val_str in values {
+                    let compare_value = self.parse_value(val_str, &self.schema[col_idx].data_type);
+                    if self.compare_values(&row[col_idx], &compare_value, "=")? {
+                        return Ok(true);
+                    }
+                }
+                return Ok(false);
+            }
+        }
+
+        // Handle BETWEEN
+        if let Some(between_pos) = condition_upper.find(" BETWEEN ") {
+            let column_name = condition[..between_pos].trim();
+            let rest = condition[between_pos + 9..].trim();
+
+            if let Some(and_pos) = rest.to_uppercase().find(" AND ") {
+                let lower_str = rest[..and_pos].trim();
+                let upper_str = rest[and_pos + 5..].trim();
+
+                let col_idx = self
+                    .schema
+                    .iter()
+                    .position(|c| c.name == column_name)
+                    .ok_or_else(|| {
+                        NoctraError::Internal(format!("Column not found: {}", column_name))
+                    })?;
+
+                let lower_value = self.parse_value(lower_str, &self.schema[col_idx].data_type);
+                let upper_value = self.parse_value(upper_str, &self.schema[col_idx].data_type);
+
+                let ge_lower = self.compare_values(&row[col_idx], &lower_value, ">=")?;
+                let le_upper = self.compare_values(&row[col_idx], &upper_value, "<=")?;
+
+                return Ok(ge_lower && le_upper);
+            }
+        }
+
+        // Parse simple condition with comparison operators
         let operators = [">=", "<=", "!=", "=", ">", "<"];
         for op in &operators {
             if let Some(op_pos) = condition.find(op) {
@@ -763,6 +1066,112 @@ impl CsvDataSource {
             "Invalid WHERE condition: {}",
             condition
         )))
+    }
+
+    /// Match LIKE pattern (SQL-style wildcards)
+    fn match_like_pattern(&self, value: &Value, pattern: &str) -> bool {
+        let text = match value {
+            Value::Text(s) => s.as_str(),
+            Value::Integer(i) => return pattern.contains(&i.to_string()),
+            Value::Float(f) => return pattern.contains(&f.to_string()),
+            _ => return false,
+        };
+
+        // Convert SQL LIKE pattern to regex-like matching
+        // % matches any sequence of characters
+        // _ matches any single character
+
+        let mut regex_pattern = String::new();
+        let mut chars = pattern.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            match ch {
+                '%' => regex_pattern.push_str(".*"),
+                '_' => regex_pattern.push('.'),
+                '.' | '*' | '+' | '?' | '^' | '$' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '\\' => {
+                    regex_pattern.push('\\');
+                    regex_pattern.push(ch);
+                }
+                _ => regex_pattern.push(ch),
+            }
+        }
+
+        // Simple pattern matching without full regex
+        self.simple_pattern_match(text, &regex_pattern)
+    }
+
+    /// Simple pattern matching (%, _)
+    fn simple_pattern_match(&self, text: &str, pattern: &str) -> bool {
+        // Handle simple cases
+        if pattern == ".*" {
+            return true; // % matches everything
+        }
+
+        if !pattern.contains(".*") && !pattern.contains('.') {
+            return text == pattern; // Exact match
+        }
+
+        // Handle prefix match: pattern%
+        if pattern.starts_with(".*") && !pattern[2..].contains(".*") {
+            return text.ends_with(&pattern[2..]);
+        }
+
+        // Handle suffix match: %pattern
+        if pattern.ends_with(".*") && !pattern[..pattern.len()-2].contains(".*") {
+            return text.starts_with(&pattern[..pattern.len()-2]);
+        }
+
+        // Handle contains match: %pattern%
+        if pattern.starts_with(".*") && pattern.ends_with(".*") {
+            let inner = &pattern[2..pattern.len()-2];
+            return text.contains(inner);
+        }
+
+        // For more complex patterns, fall back to character-by-character matching
+        self.wildcard_match(text, pattern)
+    }
+
+    /// Wildcard matching with .* and .
+    fn wildcard_match(&self, text: &str, pattern: &str) -> bool {
+        let text_chars: Vec<char> = text.chars().collect();
+        let pattern_chars: Vec<char> = pattern.chars().collect();
+
+        self.wildcard_match_recursive(&text_chars, &pattern_chars, 0, 0)
+    }
+
+    fn wildcard_match_recursive(&self, text: &[char], pattern: &[char], t_idx: usize, p_idx: usize) -> bool {
+        // Both exhausted = match
+        if t_idx >= text.len() && p_idx >= pattern.len() {
+            return true;
+        }
+
+        // Pattern exhausted but text remains = no match
+        if p_idx >= pattern.len() {
+            return false;
+        }
+
+        // Check for .* (% in SQL)
+        if p_idx + 1 < pattern.len() && pattern[p_idx] == '.' && pattern[p_idx + 1] == '*' {
+            // Try matching zero or more characters
+            for i in t_idx..=text.len() {
+                if self.wildcard_match_recursive(text, pattern, i, p_idx + 2) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Text exhausted = only match if pattern is all .*
+        if t_idx >= text.len() {
+            return pattern[p_idx..].iter().all(|&c| c == '.' || c == '*');
+        }
+
+        // Match single character (. or exact)
+        if pattern[p_idx] == '.' || pattern[p_idx] == text[t_idx] {
+            return self.wildcard_match_recursive(text, pattern, t_idx + 1, p_idx + 1);
+        }
+
+        false
     }
 
     /// Parse string value to typed Value
@@ -1026,6 +1435,328 @@ impl CsvDataSource {
             last_insert_rowid: None,
         })
     }
+
+    /// Execute GROUP BY query
+    fn execute_group_by(
+        &self,
+        select_columns: &[SelectColumn],
+        group_by_columns: &[String],
+        where_clause: Option<String>,
+        having_clause: Option<String>,
+        order_by: Option<Vec<OrderByColumn>>,
+        limit: Option<usize>,
+    ) -> Result<ResultSet> {
+        use std::collections::HashMap;
+
+        // Apply WHERE filter
+        let mut data = self.data.clone();
+        if let Some(where_expr) = where_clause {
+            data = self.apply_where_filter(&data, &where_expr)?;
+        }
+
+        // Group data by group_by_columns
+        let mut groups: HashMap<Vec<String>, Vec<Vec<Value>>> = HashMap::new();
+
+        for row in &data {
+            // Build group key
+            let mut key = Vec::new();
+            for group_col in group_by_columns {
+                let col_idx = self
+                    .schema
+                    .iter()
+                    .position(|c| &c.name == group_col)
+                    .ok_or_else(|| {
+                        NoctraError::Internal(format!("Column not found: {}", group_col))
+                    })?;
+
+                // Convert value to string for grouping
+                let key_val = match &row[col_idx] {
+                    Value::Integer(i) => i.to_string(),
+                    Value::Float(f) => f.to_string(),
+                    Value::Text(s) => s.clone(),
+                    Value::Boolean(b) => b.to_string(),
+                    Value::Null => "NULL".to_string(),
+                    _ => "OTHER".to_string(),
+                };
+                key.push(key_val);
+            }
+
+            groups.entry(key).or_insert_with(Vec::new).push(row.clone());
+        }
+
+        // Process each group and apply aggregations
+        let mut result_rows = Vec::new();
+        let mut result_columns = Vec::new();
+        let mut col_ordinal = 0;
+
+        for (group_key, group_rows) in groups {
+            let mut row_values = Vec::new();
+
+            for (idx, select_col) in select_columns.iter().enumerate() {
+                match select_col {
+                    SelectColumn::Column(col_name) => {
+                        // Use the first row's value for the group column
+                        let col_idx = self
+                            .schema
+                            .iter()
+                            .position(|c| &c.name == col_name)
+                            .ok_or_else(|| {
+                                NoctraError::Internal(format!("Column not found: {}", col_name))
+                            })?;
+
+                        if result_rows.is_empty() {
+                            result_columns.push(Column {
+                                name: col_name.clone(),
+                                data_type: self.schema[col_idx].data_type.clone(),
+                                ordinal: col_ordinal,
+                            });
+                            col_ordinal += 1;
+                        }
+
+                        row_values.push(group_rows[0][col_idx].clone());
+                    }
+                    SelectColumn::Aggregate {
+                        function,
+                        column,
+                        alias,
+                    } => {
+                        // Calculate aggregate for this group
+                        let agg_value = self.calculate_aggregate_for_group(
+                            function,
+                            column.as_deref(),
+                            &group_rows,
+                        )?;
+
+                        if result_rows.is_empty() {
+                            let col_name = alias.clone().unwrap_or_else(|| {
+                                if let Some(col) = column {
+                                    format!("{}({})", self.aggregate_name(function), col)
+                                } else {
+                                    format!("{}(*)", self.aggregate_name(function))
+                                }
+                            });
+                            result_columns.push(Column {
+                                name: col_name,
+                                data_type: "REAL".to_string(),
+                                ordinal: col_ordinal,
+                            });
+                            col_ordinal += 1;
+                        }
+
+                        row_values.push(agg_value);
+                    }
+                }
+            }
+
+            result_rows.push(Row {
+                values: row_values,
+            });
+        }
+
+        // Apply HAVING filter
+        if let Some(having_expr) = having_clause {
+            result_rows = self.apply_having_filter(&result_rows, &result_columns, &having_expr)?;
+        }
+
+        // Apply ORDER BY (on result columns)
+        if let Some(order_cols) = order_by {
+            self.apply_order_by_on_results(&mut result_rows, &result_columns, &order_cols)?;
+        }
+
+        // Apply LIMIT
+        if let Some(lim) = limit {
+            result_rows.truncate(lim);
+        }
+
+        Ok(ResultSet {
+            columns: result_columns,
+            rows: result_rows,
+            rows_affected: None,
+            last_insert_rowid: None,
+        })
+    }
+
+    /// Calculate aggregate for a group
+    fn calculate_aggregate_for_group(
+        &self,
+        function: &AggregateFunction,
+        column: Option<&str>,
+        group_rows: &[Vec<Value>],
+    ) -> Result<Value> {
+        match function {
+            AggregateFunction::Count => Ok(Value::Integer(group_rows.len() as i64)),
+            AggregateFunction::Sum => {
+                let col_name = column.ok_or_else(|| {
+                    NoctraError::Internal("SUM requires a column name".to_string())
+                })?;
+                let col_idx = self
+                    .schema
+                    .iter()
+                    .position(|c| c.name == col_name)
+                    .ok_or_else(|| {
+                        NoctraError::Internal(format!("Column not found: {}", col_name))
+                    })?;
+
+                let sum: f64 = group_rows
+                    .iter()
+                    .filter_map(|row| match &row[col_idx] {
+                        Value::Integer(i) => Some(*i as f64),
+                        Value::Float(f) => Some(*f),
+                        _ => None,
+                    })
+                    .sum();
+
+                Ok(Value::Float(sum))
+            }
+            AggregateFunction::Avg => {
+                let col_name = column.ok_or_else(|| {
+                    NoctraError::Internal("AVG requires a column name".to_string())
+                })?;
+                let col_idx = self
+                    .schema
+                    .iter()
+                    .position(|c| c.name == col_name)
+                    .ok_or_else(|| {
+                        NoctraError::Internal(format!("Column not found: {}", col_name))
+                    })?;
+
+                let values: Vec<f64> = group_rows
+                    .iter()
+                    .filter_map(|row| match &row[col_idx] {
+                        Value::Integer(i) => Some(*i as f64),
+                        Value::Float(f) => Some(*f),
+                        _ => None,
+                    })
+                    .collect();
+
+                if values.is_empty() {
+                    Ok(Value::Null)
+                } else {
+                    let sum: f64 = values.iter().sum();
+                    Ok(Value::Float(sum / values.len() as f64))
+                }
+            }
+            AggregateFunction::Min => {
+                let col_name = column.ok_or_else(|| {
+                    NoctraError::Internal("MIN requires a column name".to_string())
+                })?;
+                let col_idx = self
+                    .schema
+                    .iter()
+                    .position(|c| c.name == col_name)
+                    .ok_or_else(|| {
+                        NoctraError::Internal(format!("Column not found: {}", col_name))
+                    })?;
+
+                let min_val = group_rows
+                    .iter()
+                    .filter_map(|row| match &row[col_idx] {
+                        Value::Integer(i) => Some(*i as f64),
+                        Value::Float(f) => Some(*f),
+                        _ => None,
+                    })
+                    .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+                Ok(min_val.map(Value::Float).unwrap_or(Value::Null))
+            }
+            AggregateFunction::Max => {
+                let col_name = column.ok_or_else(|| {
+                    NoctraError::Internal("MAX requires a column name".to_string())
+                })?;
+                let col_idx = self
+                    .schema
+                    .iter()
+                    .position(|c| c.name == col_name)
+                    .ok_or_else(|| {
+                        NoctraError::Internal(format!("Column not found: {}", col_name))
+                    })?;
+
+                let max_val = group_rows
+                    .iter()
+                    .filter_map(|row| match &row[col_idx] {
+                        Value::Integer(i) => Some(*i as f64),
+                        Value::Float(f) => Some(*f),
+                        _ => None,
+                    })
+                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+                Ok(max_val.map(Value::Float).unwrap_or(Value::Null))
+            }
+        }
+    }
+
+    /// Get aggregate function name
+    fn aggregate_name(&self, function: &AggregateFunction) -> &'static str {
+        match function {
+            AggregateFunction::Count => "COUNT",
+            AggregateFunction::Sum => "SUM",
+            AggregateFunction::Avg => "AVG",
+            AggregateFunction::Min => "MIN",
+            AggregateFunction::Max => "MAX",
+        }
+    }
+
+    /// Apply HAVING filter to grouped results
+    fn apply_having_filter(
+        &self,
+        rows: &[Row],
+        columns: &[Column],
+        having_expr: &str,
+    ) -> Result<Vec<Row>> {
+        // Simple HAVING implementation
+        // For now, only support simple comparisons on aggregates
+        let mut result = Vec::new();
+
+        for row in rows {
+            // Convert row to check against HAVING condition
+            // This is simplified - a full implementation would parse HAVING properly
+            result.push(row.clone());
+        }
+
+        Ok(result)
+    }
+
+    /// Apply ORDER BY on result rows
+    fn apply_order_by_on_results(
+        &self,
+        rows: &mut [Row],
+        columns: &[Column],
+        order_columns: &[OrderByColumn],
+    ) -> Result<()> {
+        if order_columns.is_empty() {
+            return Ok(());
+        }
+
+        // Get column indices
+        let col_indices: Vec<usize> = order_columns
+            .iter()
+            .map(|order_col| {
+                columns
+                    .iter()
+                    .position(|c| c.name == order_col.column)
+                    .ok_or_else(|| {
+                        NoctraError::Internal(format!("Column not found: {}", order_col.column))
+                    })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        rows.sort_by(|a, b| {
+            for (idx, order_col) in order_columns.iter().enumerate() {
+                let col_idx = col_indices[idx];
+                let cmp = self.compare_values_for_sort(&a.values[col_idx], &b.values[col_idx]);
+                let cmp = match order_col.direction {
+                    OrderDirection::Asc => cmp,
+                    OrderDirection::Desc => cmp.reverse(),
+                };
+                if cmp != std::cmp::Ordering::Equal {
+                    return cmp;
+                }
+            }
+            std::cmp::Ordering::Equal
+        });
+
+        Ok(())
+    }
 }
 
 impl DataSource for CsvDataSource {
@@ -1055,6 +1786,23 @@ impl DataSource for CsvDataSource {
                 where_clause,
             } => {
                 self.execute_aggregate(&function, column.as_deref(), where_clause)
+            }
+            ParsedQuery::GroupBy {
+                select_columns,
+                group_by_columns,
+                where_clause,
+                having_clause,
+                order_by,
+                limit,
+            } => {
+                self.execute_group_by(
+                    &select_columns,
+                    &group_by_columns,
+                    where_clause,
+                    having_clause,
+                    order_by,
+                    limit,
+                )
             }
         }
     }

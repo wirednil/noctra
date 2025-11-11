@@ -1130,10 +1130,107 @@ impl<'a> NoctraTui<'a> {
 
             self.show_info_dialog(&format!("✅ Importadas {} filas desde '{}' a tabla '{}'", rows_imported, file, table));
         } else if is_json {
-            // JSON import: no implementado aún en M4
-            return Err(Box::new(NoctraError::Internal(
-                "Importación de JSON no implementada en M4 (planeado para M5)".into()
-            )));
+            // Importar JSON (array de objetos)
+            use serde_json::Value as JsonValue;
+
+            // Leer todo el archivo
+            let json_content = std::io::read_to_string(reader)
+                .map_err(|e| NoctraError::Internal(format!("Error leyendo JSON: {}", e)))?;
+
+            // Parsear JSON
+            let json_data: JsonValue = serde_json::from_str(&json_content)
+                .map_err(|e| NoctraError::Internal(format!("Error parseando JSON: {}", e)))?;
+
+            // Verificar que es un array
+            let array = match json_data {
+                JsonValue::Array(arr) => arr,
+                _ => return Err(Box::new(NoctraError::Internal(
+                    "JSON debe ser un array de objetos".into()
+                ))),
+            };
+
+            if array.is_empty() {
+                return Err(Box::new(NoctraError::Internal("Array JSON vacío".into())));
+            }
+
+            // Extraer columnas del primer objeto
+            let first_obj = match &array[0] {
+                JsonValue::Object(obj) => obj,
+                _ => return Err(Box::new(NoctraError::Internal(
+                    "Elementos del array deben ser objetos".into()
+                ))),
+            };
+
+            let columns: Vec<String> = first_obj.keys().cloned().collect();
+
+            if columns.is_empty() {
+                return Err(Box::new(NoctraError::Internal("No se encontraron columnas en JSON".into())));
+            }
+
+            // Inferir tipos de datos del primer objeto
+            let column_types: Vec<(&str, &str)> = columns.iter().map(|col| {
+                let value = &first_obj[col];
+                let sql_type = match value {
+                    JsonValue::Number(n) => {
+                        if n.is_i64() {
+                            "INTEGER"
+                        } else {
+                            "REAL"
+                        }
+                    }
+                    JsonValue::Bool(_) => "INTEGER", // SQLite usa INTEGER para booleanos
+                    JsonValue::String(_) => "TEXT",
+                    JsonValue::Null => "TEXT", // Default para NULL
+                    _ => "TEXT", // Arrays y objects como TEXT (JSON string)
+                };
+                (col.as_str(), sql_type)
+            }).collect();
+
+            // Crear tabla en SQLite
+            let column_defs: Vec<String> = column_types.iter()
+                .map(|(name, typ)| format!("{} {}", name, typ))
+                .collect();
+            let create_sql = format!("CREATE TABLE IF NOT EXISTS {} ({})", table, column_defs.join(", "));
+
+            self.executor.execute_sql(&self.session, &create_sql)
+                .map_err(|e| NoctraError::Internal(format!("Error creando tabla: {}", e)))?;
+
+            // Insertar datos
+            let mut rows_imported = 0;
+
+            for item in &array {
+                let obj = match item {
+                    JsonValue::Object(o) => o,
+                    _ => {
+                        eprintln!("⚠️  Advertencia: elemento no es objeto, saltando");
+                        continue;
+                    }
+                };
+
+                // Extraer valores en orden de columnas
+                let values: Vec<String> = columns.iter().map(|col| {
+                    let value = obj.get(col).unwrap_or(&JsonValue::Null);
+                    match value {
+                        JsonValue::String(s) => format!("'{}'", s.replace('\'', "''")),
+                        JsonValue::Number(n) => n.to_string(),
+                        JsonValue::Bool(b) => if *b { "1" } else { "0" }.to_string(),
+                        JsonValue::Null => "NULL".to_string(),
+                        JsonValue::Array(_) | JsonValue::Object(_) => {
+                            // Serializar a JSON string
+                            format!("'{}'", serde_json::to_string(value)
+                                .unwrap_or_default()
+                                .replace('\'', "''"))
+                        }
+                    }
+                }).collect();
+
+                // Construir INSERT con valores
+                let insert = format!("INSERT INTO {} VALUES ({})", table, values.join(", "));
+                self.executor.execute_sql(&self.session, &insert)?;
+                rows_imported += 1;
+            }
+
+            self.show_info_dialog(&format!("✅ Importadas {} filas desde '{}' a tabla '{}'", rows_imported, file, table));
         }
 
         Ok(())
