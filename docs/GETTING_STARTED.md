@@ -6,6 +6,7 @@
 - **[Design Document](DESIGN.md)** - Arquitectura técnica detallada
 - **[Roadmap](ROADMAP.md)** - Milestones y timeline de desarrollo
 - **[RQL Extensions](RQL-EXTENSIONS.md)** - Referencia completa del lenguaje
+- **[NQL Specification](NQL-SPEC.md)** - 🆕 Noctra Query Language (multi-fuente)
 - **[FDL2 Specification](FDL2-SPEC.md)** - Lenguaje de definición de formularios
 - **[API Reference](API-REFERENCE.md)** - API de programación
 - **[Contributing](../CONTRIBUTING.md)** - Cómo contribuir al proyecto
@@ -383,6 +384,182 @@ Ejecuta en batch:
 noctra -b proceso_mensual.rql
 ```
 
+## 📄 Trabajar con Archivos CSV (NQL)
+
+**Nuevo en v0.1.0 (M3.5)** - Noctra ahora soporta archivos CSV como fuentes de datos mediante NQL (Noctra Query Language).
+
+### 5. Cargar y Consultar CSV
+
+```sql
+-- Cargar archivo CSV
+USE './datos/clientes.csv' AS csv OPTIONS (delimiter=',', header=true);
+
+-- Ver fuentes disponibles
+SHOW SOURCES;
+
+-- Resultado:
+-- Alias | Tipo  | Path
+-- ------|-------|----------------------
+-- csv   | csv   | ./datos/clientes.csv
+
+-- Ver tablas del CSV
+SHOW TABLES FROM csv;
+
+-- Ver estructura
+DESCRIBE csv.clientes;
+
+-- Consultar datos
+SELECT * FROM clientes;
+```
+
+### 6. Opciones de Carga CSV
+
+```sql
+-- CSV con punto y coma como delimitador
+USE './datos/ventas.csv' AS ventas OPTIONS (delimiter=';', header=true);
+
+-- CSV sin headers
+USE './datos/numeros.csv' AS nums OPTIONS (delimiter=',', header=false);
+
+-- El sistema generará columnas: col1, col2, col3, etc.
+
+-- CSV con tabulador
+USE './datos/export.tsv' AS tsv OPTIONS (delimiter='\t', header=true);
+```
+
+### 7. Múltiples Fuentes de Datos
+
+```sql
+-- Registrar varias fuentes
+USE './datos/clientes.csv' AS clientes OPTIONS (delimiter=',', header=true);
+USE './datos/productos.csv' AS productos OPTIONS (delimiter=',', header=true);
+USE './basedatos.db' AS db;
+
+-- Listar todas las fuentes
+SHOW SOURCES;
+
+-- Consultar diferentes fuentes
+SELECT * FROM clientes;  -- CSV
+SELECT * FROM productos; -- CSV
+USE db;
+SELECT * FROM empleados; -- SQLite
+```
+
+### 8. Variables de Sesión
+
+```sql
+-- Definir variables
+LET pais = 'Argentina';
+LET año = '2024';
+
+-- Ver variables
+SHOW VARS;
+
+-- Resultado:
+-- Variable | Valor
+-- ---------|----------
+-- pais     | Argentina
+-- año      | 2024
+
+-- Usar variables en queries
+SELECT * FROM clientes WHERE pais = $pais;
+
+-- Eliminar variables
+UNSET pais, año;
+```
+
+### 9. Ejemplo Completo: Análisis de CSV
+
+**Archivo: ventas_2024.csv**
+```csv
+fecha,producto,cantidad,precio,vendedor
+2024-01-15,Laptop,2,1200.50,Juan Pérez
+2024-01-16,Mouse,5,25.00,María González
+2024-01-17,Teclado,3,80.00,Juan Pérez
+2024-01-18,Monitor,1,350.00,Carlos López
+```
+
+**Análisis en Noctra:**
+```sql
+-- Cargar CSV
+USE './ventas_2024.csv' AS ventas OPTIONS (delimiter=',', header=true);
+
+-- Inspeccionar datos
+DESCRIBE ventas.ventas_2024;
+
+-- Resultado:
+-- Campos    | Tipo
+-- ----------|--------
+-- fecha     | TEXT
+-- producto  | TEXT
+-- cantidad  | INTEGER
+-- precio    | REAL
+-- vendedor  | TEXT
+
+-- Ver todos los datos
+SELECT * FROM ventas_2024;
+
+-- Análisis por vendedor (requiere SQLite para GROUP BY)
+-- Por ahora solo soporta SELECT * FROM,
+-- para análisis avanzado usar IMPORT a SQLite
+```
+
+### 10. Limitaciones Actuales de CSV
+
+**Soportado:**
+- ✅ `SELECT * FROM table` - Consulta completa
+- ✅ Detección automática de delimitadores
+- ✅ Inferencia de tipos de datos
+- ✅ Headers automáticos o generados
+
+**No soportado aún (próximo M4):**
+- ❌ `WHERE`, `JOIN`, `GROUP BY`, `ORDER BY`
+- ❌ Selección de columnas específicas
+- ❌ `INSERT`, `UPDATE`, `DELETE` en CSV
+- ❌ `IMPORT`/`EXPORT` entre fuentes
+
+**Workaround para análisis avanzado:**
+```sql
+-- Opción 1: Usar herramientas externas
+-- sqlite3 basedatos.db
+-- .mode csv
+-- .import ventas_2024.csv temp_ventas
+-- Luego usar Noctra con esa base
+
+-- Opción 2: Esperar M4 que implementará:
+-- IMPORT 'ventas.csv' AS temp;
+-- INSERT INTO sqlite_table SELECT * FROM temp;
+```
+
+### Tipo de Datos CSV
+
+Noctra infiere automáticamente los tipos:
+
+| Valores en CSV | Tipo Inferido | Ejemplo |
+|----------------|---------------|---------|
+| 1, 2, 100 | INTEGER | id, cantidad |
+| 1.5, 3.14, 99.99 | REAL | precio, porcentaje |
+| true, false, yes, no | BOOLEAN | activo, disponible |
+| Texto mezclado | TEXT | nombre, dirección |
+
+### Ejemplo TUI: CSV en Acción
+
+```
+──( RESULTADO ) SQL Noctra 0.1.0 ── Fuente: csv:clientes ────Cmd: 3───
+
+┌──────────────────────────────────────────────────────────────┐
+│id    │nombre           │email                  │pais          │
+│1     │Juan Pérez       │juan@example.com       │Argentina     │
+│2     │María González   │maria@example.com      │Chile         │
+│3     │Pedro Rodríguez  │pedro@example.com      │Uruguay       │
+│                                                                │
+│                                                                │
+3 fila(s) retornada(s) - Comando: SELECT * FROM clientes;       │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Nota el indicador `Fuente: csv:clientes` en la barra de estado.
+
 ## Modo Batch
 
 ### Ejecutar Script
@@ -536,5 +713,5 @@ noctra form examples/empleados.toml --param filtro=SALES
 
 ---
 
-**Getting Started v1.0** - Guía para nuevos usuarios  
-**Última actualización:** 2025-11-04
+**Getting Started v1.1** - Guía para nuevos usuarios
+**Última actualización:** 2025-11-09 (Agregado soporte CSV/NQL)

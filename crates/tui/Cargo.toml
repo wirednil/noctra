@@ -15,6 +15,7 @@ tui-textarea = "0.7"
 
 # Core dependencies
 noctra-core = { path = "../core" }
+noctra-parser = { path = "../parser" }
 noctra-formlib = { path = "../formlib" }
 
 # Async runtime
