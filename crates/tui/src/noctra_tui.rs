@@ -1010,6 +1010,13 @@ impl<'a> NoctraTui<'a> {
     fn handle_import(&mut self, file: &str, table: &str, options: &HashMap<String, String>) -> Result<(), Box<dyn std::error::Error>> {
         use std::fs::File;
         use std::io::{BufRead, BufReader};
+        use std::path::Path;
+
+        // Validar ruta de archivo (sandboxing)
+        Self::validate_file_path(file)?;
+
+        // Validar nombre de tabla (SQL injection prevention)
+        Self::validate_table_name(table)?;
 
         // Detectar formato por extensión
         let is_csv = file.ends_with(".csv");
@@ -1019,6 +1026,20 @@ impl<'a> NoctraTui<'a> {
             return Err(Box::new(NoctraError::Internal(
                 format!("Formato de archivo no soportado: {} (solo .csv y .json)", file)
             )));
+        }
+
+        // Check file size (max 100MB)
+        let path = Path::new(file);
+        if path.exists() {
+            let metadata = std::fs::metadata(path)?;
+            const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024;
+            if metadata.len() > MAX_FILE_SIZE {
+                return Err(Box::new(NoctraError::Internal(format!(
+                    "Archivo demasiado grande: {} bytes (máx: {} bytes)",
+                    metadata.len(),
+                    MAX_FILE_SIZE
+                ))));
+            }
         }
 
         // Leer archivo
@@ -1123,6 +1144,14 @@ impl<'a> NoctraTui<'a> {
     fn handle_export(&mut self, query: &str, file: &str, format: &noctra_parser::ExportFormat, options: &HashMap<String, String>) -> Result<(), Box<dyn std::error::Error>> {
         use std::fs::File;
         use std::io::Write;
+
+        // Validar ruta de archivo (sandboxing)
+        Self::validate_file_path(file)?;
+
+        // Validar nombre de tabla si no es SELECT
+        if !query.to_uppercase().starts_with("SELECT ") {
+            Self::validate_table_name(query)?;
+        }
 
         // Ejecutar query para obtener datos
         let result = if query.to_uppercase().starts_with("SELECT ") {
@@ -1253,6 +1282,70 @@ impl<'a> NoctraTui<'a> {
         // Por ahora, mostrar mensaje informativo
         self.show_info_dialog("⚠️ FILTER: Filtrado declarativo\n\nNo implementado completamente en M4.\nUse WHERE en SELECT.\n\nEjemplo:\nSELECT * FROM productos\nWHERE precio > 100;");
         Ok(())
+    }
+
+    /// Validar ruta de archivo (sandboxing)
+    fn validate_file_path(file: &str) -> Result<(), Box<dyn std::error::Error>> {
+        use std::path::Path;
+
+        let path = Path::new(file);
+        let path_str = path.to_string_lossy();
+
+        // Directorios bloqueados
+        let blocked_dirs = [
+            "/etc/",
+            "/sys/",
+            "/proc/",
+            "/dev/",
+            "/root/",
+            "/boot/",
+            "C:\\Windows\\",
+            "C:\\Program Files\\",
+        ];
+
+        for blocked in &blocked_dirs {
+            if path_str.starts_with(blocked) {
+                return Err(Box::new(NoctraError::Internal(format!(
+                    "Acceso denegado: No se puede acceder a directorio del sistema: {}",
+                    path_str
+                ))));
+            }
+        }
+
+        // Prevenir path traversal
+        if path_str.contains("..") {
+            return Err(Box::new(NoctraError::Internal(
+                "Acceso denegado: Path traversal no permitido".to_string(),
+            )));
+        }
+
+        // Validar que es un archivo regular
+        if path.exists() {
+            let metadata = std::fs::metadata(path)?;
+            if !metadata.is_file() {
+                return Err(Box::new(NoctraError::Internal(
+                    "Acceso denegado: La ruta debe ser un archivo regular".to_string(),
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validar nombre de tabla (SQL injection prevention)
+    fn validate_table_name(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Solo permitir alfanuméricos, guión bajo y guión
+        if name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        {
+            Ok(())
+        } else {
+            Err(Box::new(NoctraError::Internal(format!(
+                "Nombre de tabla inválido: '{}' (solo alfanuméricos, _, - permitidos)",
+                name
+            ))))
+        }
     }
 
     /// Extraer nombre de tabla de un comando SQL

@@ -2,7 +2,7 @@
 
 **Última actualización:** 2025-11-11
 **Branch activo:** `claude/validate-markdown-next-steps-011CV2JHU4XekbnxRXUxE9H5`
-**Versión:** 0.2.0-dev (M4 Fase 1 en progreso)
+**Versión:** 0.2.0 (M4 Completado)
 
 ---
 
@@ -10,7 +10,7 @@
 
 Noctra es un entorno SQL interactivo moderno escrito en Rust con filosofía 4GL, proporcionando una experiencia profesional de consulta SQL con formularios declarativos y TUI avanzado.
 
-**Progreso General:** M1 ✅ | M2 ✅ | M3 ✅ | **M3.5 ✅** | **M4 🚧 25%** | M5 📋 | M6 🎯
+**Progreso General:** M1 ✅ | M2 ✅ | M3 ✅ | M3.5 ✅ | **M4 ✅** | M5 📋 | M6 🎯
 
 | Milestone | Estado | Progreso | Último Commit |
 |-----------|--------|----------|---------------|
@@ -19,14 +19,14 @@ Noctra es un entorno SQL interactivo moderno escrito en Rust con filosofía 4GL,
 | **M2: Forms + TUI** | ✅ Completado | 100% | fa43a74 |
 | **M3: Backend SQL/RQL** | ✅ Completado | 100% | a64a72c |
 | **M3.5: CSV/NQL Hotfix** | ✅ Completado | 100% | dbddebc |
-| **M4: Advanced Features (Fase 1)** | 🚧 En Progreso | 25% | 2025-11-11 |
+| **M4: Advanced Features** | ✅ Completado | 100% | 2025-11-11 |
 | **M5: Extended Capabilities** | 📋 Planificado | 0% | - |
 | **M6: Noctra 2.0 "FABRIC"** | 🎯 Planificado | 0% | - |
 
 **Total Tests:** 29 pasando (100%)
-**Build:** Release OK (2 warnings menores en core)
+**Build:** Release OK (3 warnings menores en core)
 **Clippy:** 0 warnings
-**Estado:** 🚧 **M4 Fase 1 Completada - IMPORT/EXPORT implementados**
+**Estado:** ✅ **M4 Completado - CSV Backend Avanzado + Seguridad**
 
 ### 🆕 Extensión Conceptual: NQL (Noctra Query Language)
 

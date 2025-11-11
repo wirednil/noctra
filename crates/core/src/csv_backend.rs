@@ -30,7 +30,54 @@ pub struct CsvDataSource {
     data: Vec<Vec<Value>>,
 }
 
+/// Parsed SQL query representation
+#[derive(Debug)]
+enum ParsedQuery {
+    Select {
+        columns: Vec<String>,
+        where_clause: Option<String>,
+        order_by: Option<Vec<OrderByColumn>>,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    },
+    Aggregate {
+        function: AggregateFunction,
+        column: Option<String>,
+        where_clause: Option<String>,
+    },
+}
+
+/// Aggregate functions
+#[derive(Debug)]
+enum AggregateFunction {
+    Count,
+    Sum,
+    Avg,
+    Min,
+    Max,
+}
+
+/// ORDER BY column specification
+#[derive(Debug)]
+struct OrderByColumn {
+    column: String,
+    direction: OrderDirection,
+}
+
+/// Sort direction
+#[derive(Debug)]
+enum OrderDirection {
+    Asc,
+    Desc,
+}
+
 impl CsvDataSource {
+    /// Maximum rows allowed in CSV file (prevents DoS)
+    const MAX_ROWS: usize = 1_000_000;
+
+    /// Maximum file size in bytes (100MB)
+    const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024;
+
     /// Create a new CSV data source
     pub fn new<P: AsRef<Path>>(path: P, name: String, options: CsvOptions) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
@@ -40,6 +87,19 @@ impl CsvDataSource {
             return Err(NoctraError::Internal(format!(
                 "CSV file not found: {}",
                 path.display()
+            )));
+        }
+
+        // Validate file path (sandboxing)
+        Self::validate_file_path(&path)?;
+
+        // Check file size
+        let metadata = std::fs::metadata(&path)?;
+        if metadata.len() > Self::MAX_FILE_SIZE {
+            return Err(NoctraError::Internal(format!(
+                "CSV file too large: {} bytes (max: {} bytes)",
+                metadata.len(),
+                Self::MAX_FILE_SIZE
             )));
         }
 
@@ -134,11 +194,19 @@ impl CsvDataSource {
             lines.next();
         }
 
-        // Read all lines
+        // Read all lines with row limit
         for line in lines {
             let line = line?;
             if line.trim().is_empty() {
                 continue;
+            }
+
+            // Check row limit
+            if all_rows.len() >= Self::MAX_ROWS {
+                return Err(NoctraError::Internal(format!(
+                    "CSV file exceeds maximum row limit: {} rows",
+                    Self::MAX_ROWS
+                )));
             }
 
             let fields: Vec<String> = Self::parse_csv_line(&line, delimiter, options.quote);
@@ -296,6 +364,668 @@ impl CsvDataSource {
             .unwrap_or("csv_table")
             .to_string()
     }
+
+    /// Validate file path to prevent directory traversal attacks
+    fn validate_file_path(path: &Path) -> Result<()> {
+        // Prevent absolute paths to system directories
+        let path_str = path.to_string_lossy();
+
+        // Blocked directories
+        let blocked_dirs = [
+            "/etc/",
+            "/sys/",
+            "/proc/",
+            "/dev/",
+            "/root/",
+            "/boot/",
+            "C:\\Windows\\",
+            "C:\\Program Files\\",
+        ];
+
+        for blocked in &blocked_dirs {
+            if path_str.starts_with(blocked) {
+                return Err(NoctraError::Internal(format!(
+                    "Access denied: Cannot read from system directory: {}",
+                    path_str
+                )));
+            }
+        }
+
+        // Check for path traversal patterns
+        if path_str.contains("..") {
+            return Err(NoctraError::Internal(
+                "Access denied: Path traversal not allowed".to_string(),
+            ));
+        }
+
+        // Ensure it's a regular file (not a device or socket)
+        if path.exists() {
+            let metadata = std::fs::metadata(path)?;
+            if !metadata.is_file() {
+                return Err(NoctraError::Internal(
+                    "Access denied: Path must be a regular file".to_string(),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Sanitize column name to prevent SQL injection
+    fn sanitize_column_name(name: &str) -> Result<String> {
+        // Only allow alphanumeric, underscore, and hyphen
+        if name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        {
+            Ok(name.to_string())
+        } else {
+            Err(NoctraError::Internal(format!(
+                "Invalid column name: '{}' (only alphanumeric, _, - allowed)",
+                name
+            )))
+        }
+    }
+
+    /// Parse SQL query into components
+    fn parse_sql_query(&self, sql: &str) -> Result<ParsedQuery> {
+        let sql_upper = sql.to_uppercase();
+
+        // Check for aggregation functions
+        if sql_upper.contains("COUNT(")
+            || sql_upper.contains("SUM(")
+            || sql_upper.contains("AVG(")
+            || sql_upper.contains("MIN(")
+            || sql_upper.contains("MAX(")
+        {
+            return self.parse_aggregate_query(sql);
+        }
+
+        // Parse SELECT query
+        self.parse_select_query(sql)
+    }
+
+    /// Parse SELECT query
+    fn parse_select_query(&self, sql: &str) -> Result<ParsedQuery> {
+        let sql_upper = sql.to_uppercase();
+
+        // Extract column list (for now, only support * or column names)
+        let columns = if sql_upper.contains("SELECT *") {
+            vec!["*".to_string()]
+        } else {
+            // Simple column extraction between SELECT and FROM
+            let select_idx = sql_upper.find("SELECT ").ok_or_else(|| {
+                NoctraError::Internal("Invalid SELECT query".to_string())
+            })?;
+            let from_idx = sql_upper.find(" FROM ").ok_or_else(|| {
+                NoctraError::Internal("Missing FROM clause".to_string())
+            })?;
+
+            let cols_str = sql[select_idx + 7..from_idx].trim();
+            cols_str
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect()
+        };
+
+        // Extract WHERE clause
+        let where_clause = if let Some(where_idx) = sql_upper.find(" WHERE ") {
+            let after_where = sql[where_idx + 7..].trim();
+            // Find end of WHERE (before ORDER BY, LIMIT, or end of string)
+            let end_idx = after_where
+                .to_uppercase()
+                .find(" ORDER BY ")
+                .or_else(|| after_where.to_uppercase().find(" LIMIT "))
+                .unwrap_or(after_where.len());
+            Some(after_where[..end_idx].trim().to_string())
+        } else {
+            None
+        };
+
+        // Extract ORDER BY clause
+        let order_by = if let Some(order_idx) = sql_upper.find(" ORDER BY ") {
+            let after_order = sql[order_idx + 10..].trim();
+            let end_idx = after_order
+                .to_uppercase()
+                .find(" LIMIT ")
+                .unwrap_or(after_order.len());
+            let order_str = after_order[..end_idx].trim();
+            Some(self.parse_order_by(order_str)?)
+        } else {
+            None
+        };
+
+        // Extract LIMIT clause
+        let limit = if let Some(limit_idx) = sql_upper.find(" LIMIT ") {
+            let after_limit = sql[limit_idx + 7..].trim();
+            let end_idx = after_limit
+                .to_uppercase()
+                .find(" OFFSET ")
+                .unwrap_or(after_limit.len());
+            let limit_str = after_limit[..end_idx].trim();
+            Some(limit_str.parse::<usize>().map_err(|_| {
+                NoctraError::Internal("Invalid LIMIT value".to_string())
+            })?)
+        } else {
+            None
+        };
+
+        // Extract OFFSET clause
+        let offset = if let Some(offset_idx) = sql_upper.find(" OFFSET ") {
+            let after_offset = sql[offset_idx + 8..].trim();
+            Some(after_offset.parse::<usize>().map_err(|_| {
+                NoctraError::Internal("Invalid OFFSET value".to_string())
+            })?)
+        } else {
+            None
+        };
+
+        Ok(ParsedQuery::Select {
+            columns,
+            where_clause,
+            order_by,
+            limit,
+            offset,
+        })
+    }
+
+    /// Parse ORDER BY clause
+    fn parse_order_by(&self, order_str: &str) -> Result<Vec<OrderByColumn>> {
+        let parts: Vec<&str> = order_str.split(',').collect();
+        let mut order_columns = Vec::new();
+
+        for part in parts {
+            let tokens: Vec<&str> = part.trim().split_whitespace().collect();
+            if tokens.is_empty() {
+                continue;
+            }
+
+            let column_name = tokens[0].to_string();
+            let direction = if tokens.len() > 1 && tokens[1].to_uppercase() == "DESC" {
+                OrderDirection::Desc
+            } else {
+                OrderDirection::Asc
+            };
+
+            order_columns.push(OrderByColumn {
+                column: column_name,
+                direction,
+            });
+        }
+
+        Ok(order_columns)
+    }
+
+    /// Parse aggregate query
+    fn parse_aggregate_query(&self, sql: &str) -> Result<ParsedQuery> {
+        let sql_upper = sql.to_uppercase();
+
+        // Extract aggregate function
+        let (function, column) = if let Some(count_idx) = sql_upper.find("COUNT(") {
+            let after_count = &sql[count_idx + 6..];
+            let close_paren = after_count.find(')').ok_or_else(|| {
+                NoctraError::Internal("Invalid COUNT syntax".to_string())
+            })?;
+            let col = after_count[..close_paren].trim();
+            let col_name = if col == "*" {
+                None
+            } else {
+                Some(col.to_string())
+            };
+            (AggregateFunction::Count, col_name)
+        } else if let Some(sum_idx) = sql_upper.find("SUM(") {
+            let after_sum = &sql[sum_idx + 4..];
+            let close_paren = after_sum.find(')').ok_or_else(|| {
+                NoctraError::Internal("Invalid SUM syntax".to_string())
+            })?;
+            let col = after_sum[..close_paren].trim().to_string();
+            (AggregateFunction::Sum, Some(col))
+        } else if let Some(avg_idx) = sql_upper.find("AVG(") {
+            let after_avg = &sql[avg_idx + 4..];
+            let close_paren = after_avg.find(')').ok_or_else(|| {
+                NoctraError::Internal("Invalid AVG syntax".to_string())
+            })?;
+            let col = after_avg[..close_paren].trim().to_string();
+            (AggregateFunction::Avg, Some(col))
+        } else if let Some(min_idx) = sql_upper.find("MIN(") {
+            let after_min = &sql[min_idx + 4..];
+            let close_paren = after_min.find(')').ok_or_else(|| {
+                NoctraError::Internal("Invalid MIN syntax".to_string())
+            })?;
+            let col = after_min[..close_paren].trim().to_string();
+            (AggregateFunction::Min, Some(col))
+        } else if let Some(max_idx) = sql_upper.find("MAX(") {
+            let after_max = &sql[max_idx + 4..];
+            let close_paren = after_max.find(')').ok_or_else(|| {
+                NoctraError::Internal("Invalid MAX syntax".to_string())
+            })?;
+            let col = after_max[..close_paren].trim().to_string();
+            (AggregateFunction::Max, Some(col))
+        } else {
+            return Err(NoctraError::Internal(
+                "Unknown aggregate function".to_string(),
+            ));
+        };
+
+        // Extract WHERE clause
+        let where_clause = if let Some(where_idx) = sql_upper.find(" WHERE ") {
+            Some(sql[where_idx + 7..].trim().to_string())
+        } else {
+            None
+        };
+
+        Ok(ParsedQuery::Aggregate {
+            function,
+            column,
+            where_clause,
+        })
+    }
+
+    /// Execute SELECT query
+    fn execute_select(
+        &self,
+        columns: &[String],
+        where_clause: Option<String>,
+        order_by: Option<Vec<OrderByColumn>>,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<ResultSet> {
+        // Start with all data
+        let mut filtered_data: Vec<Vec<Value>> = self.data.clone();
+
+        // Apply WHERE filter
+        if let Some(where_expr) = where_clause {
+            filtered_data = self.apply_where_filter(&filtered_data, &where_expr)?;
+        }
+
+        // Apply ORDER BY
+        if let Some(order_cols) = order_by {
+            self.apply_order_by(&mut filtered_data, &order_cols)?;
+        }
+
+        // Apply OFFSET
+        let start_idx = offset.unwrap_or(0);
+        if start_idx > 0 {
+            filtered_data = filtered_data.into_iter().skip(start_idx).collect();
+        }
+
+        // Apply LIMIT
+        if let Some(lim) = limit {
+            filtered_data.truncate(lim);
+        }
+
+        // Build columns
+        let result_columns: Vec<Column> = if columns.len() == 1 && columns[0] == "*" {
+            self.schema
+                .iter()
+                .enumerate()
+                .map(|(idx, col)| Column {
+                    name: col.name.clone(),
+                    data_type: col.data_type.clone(),
+                    ordinal: idx,
+                })
+                .collect()
+        } else {
+            // Specific columns
+            columns
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, col_name)| {
+                    self.schema.iter().find(|c| &c.name == col_name).map(|col| Column {
+                        name: col.name.clone(),
+                        data_type: col.data_type.clone(),
+                        ordinal: idx,
+                    })
+                })
+                .collect()
+        };
+
+        let rows: Vec<Row> = filtered_data
+            .into_iter()
+            .map(|values| Row { values })
+            .collect();
+
+        Ok(ResultSet {
+            columns: result_columns,
+            rows,
+            rows_affected: None,
+            last_insert_rowid: None,
+        })
+    }
+
+    /// Apply WHERE filter to data
+    fn apply_where_filter(
+        &self,
+        data: &[Vec<Value>],
+        where_expr: &str,
+    ) -> Result<Vec<Vec<Value>>> {
+        let mut result = Vec::new();
+
+        for row in data {
+            if self.evaluate_where_condition(row, where_expr)? {
+                result.push(row.clone());
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Evaluate WHERE condition for a single row
+    fn evaluate_where_condition(&self, row: &[Value], condition: &str) -> Result<bool> {
+        // Simple condition parser: column operator value
+        // Supports: =, !=, <, >, <=, >=, AND, OR
+
+        let condition = condition.trim();
+
+        // Handle AND/OR
+        if let Some(and_pos) = condition.to_uppercase().find(" AND ") {
+            let left = &condition[..and_pos];
+            let right = &condition[and_pos + 5..];
+            return Ok(
+                self.evaluate_where_condition(row, left)?
+                    && self.evaluate_where_condition(row, right)?,
+            );
+        }
+
+        if let Some(or_pos) = condition.to_uppercase().find(" OR ") {
+            let left = &condition[..or_pos];
+            let right = &condition[or_pos + 4..];
+            return Ok(
+                self.evaluate_where_condition(row, left)?
+                    || self.evaluate_where_condition(row, right)?,
+            );
+        }
+
+        // Parse simple condition
+        let operators = [">=", "<=", "!=", "=", ">", "<"];
+        for op in &operators {
+            if let Some(op_pos) = condition.find(op) {
+                let column_name = condition[..op_pos].trim();
+                let value_str = condition[op_pos + op.len()..].trim();
+
+                // Find column index
+                let col_idx = self
+                    .schema
+                    .iter()
+                    .position(|c| c.name == column_name)
+                    .ok_or_else(|| {
+                        NoctraError::Internal(format!("Column not found: {}", column_name))
+                    })?;
+
+                let row_value = &row[col_idx];
+                let compare_value = self.parse_value(value_str, &self.schema[col_idx].data_type);
+
+                return self.compare_values(row_value, &compare_value, op);
+            }
+        }
+
+        Err(NoctraError::Internal(format!(
+            "Invalid WHERE condition: {}",
+            condition
+        )))
+    }
+
+    /// Parse string value to typed Value
+    fn parse_value(&self, value_str: &str, data_type: &str) -> Value {
+        let cleaned = value_str.trim_matches(|c| c == '\'' || c == '"');
+
+        match data_type {
+            "INTEGER" => cleaned
+                .parse::<i64>()
+                .map(Value::Integer)
+                .unwrap_or_else(|_| Value::Text(cleaned.to_string())),
+            "REAL" => cleaned
+                .parse::<f64>()
+                .map(Value::Float)
+                .unwrap_or_else(|_| Value::Text(cleaned.to_string())),
+            "BOOLEAN" => {
+                let lower = cleaned.to_lowercase();
+                let bool_val = matches!(lower.as_str(), "true" | "t" | "1" | "yes");
+                Value::Boolean(bool_val)
+            }
+            _ => Value::Text(cleaned.to_string()),
+        }
+    }
+
+    /// Compare two values with an operator
+    fn compare_values(&self, left: &Value, right: &Value, op: &str) -> Result<bool> {
+        match (left, right) {
+            (Value::Integer(l), Value::Integer(r)) => Ok(match op {
+                "=" => l == r,
+                "!=" => l != r,
+                "<" => l < r,
+                ">" => l > r,
+                "<=" => l <= r,
+                ">=" => l >= r,
+                _ => false,
+            }),
+            (Value::Float(l), Value::Float(r)) => Ok(match op {
+                "=" => (l - r).abs() < f64::EPSILON,
+                "!=" => (l - r).abs() >= f64::EPSILON,
+                "<" => l < r,
+                ">" => l > r,
+                "<=" => l <= r,
+                ">=" => l >= r,
+                _ => false,
+            }),
+            (Value::Text(l), Value::Text(r)) => Ok(match op {
+                "=" => l == r,
+                "!=" => l != r,
+                "<" => l < r,
+                ">" => l > r,
+                "<=" => l <= r,
+                ">=" => l >= r,
+                _ => false,
+            }),
+            (Value::Boolean(l), Value::Boolean(r)) => Ok(match op {
+                "=" => l == r,
+                "!=" => l != r,
+                _ => false,
+            }),
+            _ => Ok(false),
+        }
+    }
+
+    /// Apply ORDER BY to data
+    fn apply_order_by(
+        &self,
+        data: &mut [Vec<Value>],
+        order_columns: &[OrderByColumn],
+    ) -> Result<()> {
+        if order_columns.is_empty() {
+            return Ok(());
+        }
+
+        // Get column indices
+        let col_indices: Vec<usize> = order_columns
+            .iter()
+            .map(|order_col| {
+                self.schema
+                    .iter()
+                    .position(|c| c.name == order_col.column)
+                    .ok_or_else(|| {
+                        NoctraError::Internal(format!("Column not found: {}", order_col.column))
+                    })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        data.sort_by(|a, b| {
+            for (idx, order_col) in order_columns.iter().enumerate() {
+                let col_idx = col_indices[idx];
+                let cmp = self.compare_values_for_sort(&a[col_idx], &b[col_idx]);
+                let cmp = match order_col.direction {
+                    OrderDirection::Asc => cmp,
+                    OrderDirection::Desc => cmp.reverse(),
+                };
+                if cmp != std::cmp::Ordering::Equal {
+                    return cmp;
+                }
+            }
+            std::cmp::Ordering::Equal
+        });
+
+        Ok(())
+    }
+
+    /// Compare values for sorting
+    fn compare_values_for_sort(&self, left: &Value, right: &Value) -> std::cmp::Ordering {
+        match (left, right) {
+            (Value::Integer(l), Value::Integer(r)) => l.cmp(r),
+            (Value::Float(l), Value::Float(r)) => {
+                l.partial_cmp(r).unwrap_or(std::cmp::Ordering::Equal)
+            }
+            (Value::Text(l), Value::Text(r)) => l.cmp(r),
+            (Value::Boolean(l), Value::Boolean(r)) => l.cmp(r),
+            (Value::Null, Value::Null) => std::cmp::Ordering::Equal,
+            (Value::Null, _) => std::cmp::Ordering::Less,
+            (_, Value::Null) => std::cmp::Ordering::Greater,
+            _ => std::cmp::Ordering::Equal,
+        }
+    }
+
+    /// Execute aggregate query
+    fn execute_aggregate(
+        &self,
+        function: &AggregateFunction,
+        column: Option<&str>,
+        where_clause: Option<String>,
+    ) -> Result<ResultSet> {
+        // Apply WHERE filter if present
+        let mut data = self.data.clone();
+        if let Some(where_expr) = where_clause {
+            data = self.apply_where_filter(&data, &where_expr)?;
+        }
+
+        // Calculate aggregate
+        let result_value = match function {
+            AggregateFunction::Count => Value::Integer(data.len() as i64),
+            AggregateFunction::Sum => {
+                let col_name = column.ok_or_else(|| {
+                    NoctraError::Internal("SUM requires a column name".to_string())
+                })?;
+                let col_idx = self
+                    .schema
+                    .iter()
+                    .position(|c| c.name == col_name)
+                    .ok_or_else(|| {
+                        NoctraError::Internal(format!("Column not found: {}", col_name))
+                    })?;
+
+                let sum: f64 = data
+                    .iter()
+                    .filter_map(|row| match &row[col_idx] {
+                        Value::Integer(i) => Some(*i as f64),
+                        Value::Float(f) => Some(*f),
+                        _ => None,
+                    })
+                    .sum();
+
+                Value::Float(sum)
+            }
+            AggregateFunction::Avg => {
+                let col_name = column.ok_or_else(|| {
+                    NoctraError::Internal("AVG requires a column name".to_string())
+                })?;
+                let col_idx = self
+                    .schema
+                    .iter()
+                    .position(|c| c.name == col_name)
+                    .ok_or_else(|| {
+                        NoctraError::Internal(format!("Column not found: {}", col_name))
+                    })?;
+
+                let values: Vec<f64> = data
+                    .iter()
+                    .filter_map(|row| match &row[col_idx] {
+                        Value::Integer(i) => Some(*i as f64),
+                        Value::Float(f) => Some(*f),
+                        _ => None,
+                    })
+                    .collect();
+
+                if values.is_empty() {
+                    Value::Null
+                } else {
+                    let sum: f64 = values.iter().sum();
+                    Value::Float(sum / values.len() as f64)
+                }
+            }
+            AggregateFunction::Min => {
+                let col_name = column.ok_or_else(|| {
+                    NoctraError::Internal("MIN requires a column name".to_string())
+                })?;
+                let col_idx = self
+                    .schema
+                    .iter()
+                    .position(|c| c.name == col_name)
+                    .ok_or_else(|| {
+                        NoctraError::Internal(format!("Column not found: {}", col_name))
+                    })?;
+
+                let min_val = data
+                    .iter()
+                    .filter_map(|row| match &row[col_idx] {
+                        Value::Integer(i) => Some(*i as f64),
+                        Value::Float(f) => Some(*f),
+                        _ => None,
+                    })
+                    .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+                min_val.map(Value::Float).unwrap_or(Value::Null)
+            }
+            AggregateFunction::Max => {
+                let col_name = column.ok_or_else(|| {
+                    NoctraError::Internal("MAX requires a column name".to_string())
+                })?;
+                let col_idx = self
+                    .schema
+                    .iter()
+                    .position(|c| c.name == col_name)
+                    .ok_or_else(|| {
+                        NoctraError::Internal(format!("Column not found: {}", col_name))
+                    })?;
+
+                let max_val = data
+                    .iter()
+                    .filter_map(|row| match &row[col_idx] {
+                        Value::Integer(i) => Some(*i as f64),
+                        Value::Float(f) => Some(*f),
+                        _ => None,
+                    })
+                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+                max_val.map(Value::Float).unwrap_or(Value::Null)
+            }
+        };
+
+        // Build result
+        let function_name = match function {
+            AggregateFunction::Count => "COUNT",
+            AggregateFunction::Sum => "SUM",
+            AggregateFunction::Avg => "AVG",
+            AggregateFunction::Min => "MIN",
+            AggregateFunction::Max => "MAX",
+        };
+
+        let column_name = if let Some(col) = column {
+            format!("{}({})", function_name, col)
+        } else {
+            format!("{}(*)", function_name)
+        };
+
+        Ok(ResultSet {
+            columns: vec![Column {
+                name: column_name,
+                data_type: "REAL".to_string(),
+                ordinal: 0,
+            }],
+            rows: vec![Row {
+                values: vec![result_value],
+            }],
+            rows_affected: None,
+            last_insert_rowid: None,
+        })
+    }
 }
 
 impl DataSource for CsvDataSource {
@@ -304,41 +1034,28 @@ impl DataSource for CsvDataSource {
         eprintln!("[DEBUG CSV] Table name: {}", self.table_name());
         eprintln!("[DEBUG CSV] Schema: {} columns", self.schema.len());
 
-        // For MVP, we'll do simple filtering in memory
-        // Full SQL support would require embedding SQLite or similar
+        // Parse the SQL query
+        let parsed_query = self.parse_sql_query(sql)?;
+        eprintln!("[DEBUG CSV] Parsed query: {:?}", parsed_query);
 
-        // For now, just return all data if it's a SELECT *
-        if sql.trim().to_uppercase().starts_with("SELECT * FROM") {
-            eprintln!("[DEBUG CSV] Returning all {} rows", self.data.len());
-
-            let columns: Vec<Column> = self.schema
-                .iter()
-                .enumerate()
-                .map(|(idx, col)| Column {
-                    name: col.name.clone(),
-                    data_type: col.data_type.clone(),
-                    ordinal: idx,
-                })
-                .collect();
-
-            let rows: Vec<Row> = self.data
-                .iter()
-                .map(|values| Row {
-                    values: values.clone(),
-                })
-                .collect();
-
-            Ok(ResultSet {
+        // Execute based on query type
+        match parsed_query {
+            ParsedQuery::Select {
                 columns,
-                rows,
-                rows_affected: None,
-                last_insert_rowid: None,
-            })
-        } else {
-            eprintln!("[DEBUG CSV] Query not supported: {}", sql);
-            Err(NoctraError::Internal(
-                "CSV source only supports 'SELECT * FROM <table>' queries for now".to_string()
-            ))
+                where_clause,
+                order_by,
+                limit,
+                offset,
+            } => {
+                self.execute_select(&columns, where_clause, order_by, limit, offset)
+            }
+            ParsedQuery::Aggregate {
+                function,
+                column,
+                where_clause,
+            } => {
+                self.execute_aggregate(&function, column.as_deref(), where_clause)
+            }
         }
     }
 
