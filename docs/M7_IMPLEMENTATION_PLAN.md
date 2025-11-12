@@ -807,17 +807,132 @@ PRINT "Procesado", CURRENT_TIMESTAMP
 >> 'log.txt';
 ```
 
+### 5.3 Manejo de Errores Global (`WHENEVER ERROR THEN`)
+
+**Sintaxis:**
+```rql
+WHENEVER ERROR THEN
+  statements
+END;
+```
+
+**Variables disponibles:**
+- `ERROR_MESSAGE` → Texto descriptivo del error
+- `ERROR_CODE` → Código numérico del error
+- `ERROR_QUERY` → Query que causó el fallo
+
+**Acciones posibles:**
+- `CONTINUE` → Continúa la ejecución del script
+- `EXIT` → Sale del script inmediatamente
+- `ROLLBACK` → Revierte transacciones activas
+
+**Ejemplo básico:**
+```rql
+WHENEVER ERROR THEN
+  PRINT "ERROR:", ERROR_MESSAGE;
+  PRINT "QUERY:", ERROR_QUERY;
+  EXPORT ERROR TO 'error_log.json';
+  CONTINUE;
+END;
+
+-- Si falla cualquier query después...
+SELECT * FROM tabla_inexistente;
+-- → Se ejecuta el bloque de error
+```
+
+**Ejemplo con ROLLBACK:**
+```rql
+WHENEVER ERROR THEN
+  PRINT "Fallo en transacción:", ERROR_MESSAGE;
+  ROLLBACK;
+  EXIT;
+END;
+
+BEGIN TRANSACTION;
+  INSERT INTO ventas VALUES (...);
+  INSERT INTO invalid_table VALUES (...);  -- Falla aquí
+COMMIT;
+```
+
+**Ejemplo con logging:**
+```rql
+WHENEVER ERROR THEN
+  PRINT "Error:", ERROR_MESSAGE;
+  PIPE TO 'echo "ERROR: ' + ERROR_MESSAGE + '" >> /tmp/noctra_error.log';
+  CONTINUE;
+END;
+```
+
+**Implementación:**
+```rust
+pub struct ErrorHandler {
+    pub block: Vec<RqlStatement>,
+    pub mode: ErrorMode,
+}
+
+pub enum ErrorMode {
+    Continue,
+    Exit,
+    Rollback,
+}
+
+impl ScriptExecutor {
+    pub fn execute_with_error_handler(&mut self, stmt: &RqlStatement) -> Result<()> {
+        match self.execute(stmt) {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                if let Some(handler) = &self.error_handler {
+                    // Set error variables
+                    self.session.set_variable("ERROR_MESSAGE", Value::String(e.to_string()));
+                    self.session.set_variable("ERROR_CODE", Value::Integer(e.code()));
+                    self.session.set_variable("ERROR_QUERY", Value::String(stmt.to_string()));
+
+                    // Execute handler block
+                    for s in &handler.block {
+                        self.execute(s)?;
+                    }
+
+                    // Apply error mode
+                    match handler.mode {
+                        ErrorMode::Continue => Ok(()),
+                        ErrorMode::Exit => std::process::exit(1),
+                        ErrorMode::Rollback => {
+                            self.engine.rollback()?;
+                            Err(e)
+                        },
+                    }
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+}
+```
+
 ### Entregables Fase 5
 
 - [ ] PIPE TO implementado
 - [ ] Redirección > y >>
+- [ ] WHENEVER ERROR THEN parser
+- [ ] ErrorHandler en ScriptExecutor
+- [ ] Variables ERROR_MESSAGE, ERROR_CODE, ERROR_QUERY
+- [ ] Modos: CONTINUE, EXIT, ROLLBACK
 - [ ] Validación de comandos (security)
 - [ ] Tests: PIPE TO grep
 - [ ] Tests: redirección
+- [ ] Tests: error handling con CONTINUE
+- [ ] Tests: error handling con EXIT
 
 **Criterio de Éxito:**
 ```rql
-SELECT * FROM ventas PIPE TO 'head -5';
+WHENEVER ERROR THEN
+  PRINT "Error capturado:", ERROR_MESSAGE;
+  CONTINUE;
+END;
+
+SELECT * FROM tabla_inexistente;  -- Error capturado, continúa
+PRINT "Script sigue ejecutándose";
 ```
 
 ---

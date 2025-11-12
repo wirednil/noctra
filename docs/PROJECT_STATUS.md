@@ -1517,6 +1517,7 @@ Agregar capacidades de scripting 4GL a Noctra, transformándolo de un entorno de
 | `SAVE SESSION`, `LOAD SESSION` | Persistencia de estado | Medium |
 | `PRINT "msg"` | Debug output | Low |
 | `PIPE TO 'cmd'` | Canalización a shell | Low |
+| `WHENEVER ERROR THEN` | Manejo de errores global | Medium |
 | `IMPORT MACRO FROM 'file'` | Librerías de macros | High |
 
 **IMPORTANTE:** Estas características NO son parte de M6. M6 se enfoca exclusivamente en DuckDB integration.
@@ -1605,10 +1606,18 @@ CALL top(5);  -- Todo restaurado
 #### **FASE 5: SALIDA & CANALIZACIÓN** (Semana 5)
 - [ ] `query PIPE TO 'cmd'`
 - [ ] `query > 'file'`, `query >> 'file'`
+- [ ] `WHENEVER ERROR THEN` error handling
+- [ ] Variables `ERROR_MESSAGE`, `ERROR_CODE`, `ERROR_QUERY`
+- [ ] Modos: `CONTINUE`, `EXIT`, `ROLLBACK`
 - [ ] Validación de seguridad
 
 **Ejemplo:**
 ```rql
+WHENEVER ERROR THEN
+  PRINT "ERROR:", ERROR_MESSAGE;
+  CONTINUE;
+END;
+
 SELECT * FROM logs
 WHERE level = 'ERROR'
 PIPE TO 'grep "database"';
@@ -1665,6 +1674,7 @@ SAVE SESSION 'analisis_ar_2025.toml';
 - ✅ GRAPH BAR renderiza ASCII
 - ✅ SAVE/LOAD SESSION preserva estado
 - ✅ PIPE TO envía a shell
+- ✅ WHENEVER ERROR THEN captura y maneja errores
 
 **Performance:**
 - ✅ Macros expanden en <1ms
