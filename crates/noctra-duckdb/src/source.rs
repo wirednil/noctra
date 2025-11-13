@@ -129,15 +129,21 @@ impl DuckDBSource {
     fn get_table_schema(&self, table_name: &str) -> Result<Vec<ColumnInfo>> {
         let conn = self.conn.lock().map_err(|_| DuckDBError::QueryFailed("Mutex poisoned".to_string()))?;
 
-        // Use PRAGMA table_info for DuckDB views
-        let sql = "PRAGMA table_info(?)";
+        // Use information_schema.columns for better compatibility with views
+        let sql = format!(
+            "SELECT column_name, data_type, is_nullable
+             FROM information_schema.columns
+             WHERE table_name = '{}'
+             ORDER BY ordinal_position",
+            table_name
+        );
 
-        let mut stmt = conn.prepare(sql).map_err(|e| DuckDBError::QueryFailed(format!("Prepare error: {}", e)))?;
-        let rows = stmt.query_map(params![table_name], |row| {
-            let name: String = row.get(1)?; // column name
-            let data_type: String = row.get(2)?; // data type
-            let notnull: i32 = row.get(3)?; // not null flag
-            Ok((name, data_type, notnull == 0)) // nullable if notnull == 0
+        let mut stmt = conn.prepare(&sql).map_err(|e| DuckDBError::QueryFailed(format!("Prepare error: {}", e)))?;
+        let rows = stmt.query_map([], |row| {
+            let name: String = row.get(0)?;
+            let data_type: String = row.get(1)?;
+            let is_nullable: String = row.get(2)?;
+            Ok((name, data_type, is_nullable == "YES"))
         }).map_err(|e| DuckDBError::QueryFailed(format!("Query map error: {}", e)))?;
 
         let mut columns = Vec::new();
@@ -304,7 +310,7 @@ mod tests {
         let mut source = DuckDBSource::new_in_memory().unwrap();
         source.register_file(temp_file.path().to_str().unwrap(), "people").unwrap();
 
-        let result = source.query("SELECT * FROM people", &noctra_core::Parameters::new()).unwrap();
+        let result = source.query("SELECT * FROM people", &Parameters::new()).unwrap();
         assert_eq!(result.rows.len(), 2);
         assert_eq!(result.columns.len(), 2);
     }

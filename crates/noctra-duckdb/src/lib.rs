@@ -5,8 +5,9 @@
 //!
 //! ## Example Usage
 //!
-//! ```rust
+//! ```rust,no_run
 //! use noctra_duckdb::DuckDBSource;
+//! use noctra_core::datasource::DataSource; // Required for query() method
 //!
 //! // Create in-memory DuckDB source
 //! let mut source = DuckDBSource::new_in_memory()?;
