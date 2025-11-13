@@ -1,8 +1,9 @@
 # Milestone 6 Phase 1 — Estado Actual de Implementación
 
 **Fecha:** 13 de noviembre de 2025
-**Estado:** ✅ FASE 1 COMPLETADA (con bloqueos menores en tests)
-**Versión:** v0.6.0-alpha
+**Estado:** ✅ FASE 1 COMPLETADA - 100% FUNCIONAL
+**Versión:** v0.6.0-alpha1
+**Branch:** `claude/fix-milestone-6-phase-1-013LgPt6XPSXEHhCAHGTeysm`
 
 ---
 
@@ -43,12 +44,17 @@ version = "0.6.0"
 edition = "2021"
 
 [dependencies]
-duckdb = { version = "1.1", features = ["bundled", "parquet", "json"] }
-noctra-core = { path = "../noctra-core" }
+duckdb = { version = "1.1", default-features = false }
+noctra-core = { path = "../core" }
 anyhow = "1.0"
 thiserror = "1.0"
 log = "0.4"
 ```
+
+**DuckDB Configuration:**
+- **Biblioteca:** Precompilada en `/opt/duckdb` (libduckdb.so v1.1.0)
+- **Build Time:** ~20s (vs ~60s con feature `bundled`)
+- **Variables de entorno:** Configuradas via `duckdb.env` o `.envrc`
 
 ### ✅ DuckDBSource Implementation
 
@@ -113,24 +119,46 @@ pub mod csv_backend;
 
 ---
 
-## 🚨 BLOQUEOS ACTUALES
+## ✅ TESTS - 100% PASANDO
 
-### ❌ Errores de Compilación en Tests
+### Estado de Tests (9/9 Passing)
 
-**Problema:** Tests no compilan debido a errores de sintaxis y imports.
+```bash
+cargo test -p noctra-duckdb
+# running 8 tests
+# test source::tests::test_new_in_memory ... ok
+# test source::tests::test_unsupported_file_type ... ok
+# test source::tests::test_parquet_support ... ok
+# test source::tests::test_json_support ... ok
+# test source::tests::test_register_csv_file ... ok
+# test source::tests::test_query_csv_data ... ok
+# test source::tests::test_schema_introspection ... ok
+# test source::tests::test_attach_sqlite ... ok
+#
+# test result: ok. 8 passed; 0 failed
+#
+# running 1 test
+# test crates/noctra-duckdb/src/lib.rs - (line 8) - compile ... ok
+#
+# test result: ok. 1 passed; 0 failed
+```
 
-**Errores Específicos:**
-1. **Formato String JSON:** `r#"[{"name": "Alice", "age": 30}]"#` - Necesita escapar llaves
-2. **Import Parameters:** `noctra_core::Parameters` no existe - Debe ser `noctra_core::types::Parameters`
+### Fixes Aplicados
 
-**Estado:** Fácil de arreglar, pero requiere corrección manual.
+**Errores Corregidos:**
+1. ✅ **Import Parameters:** Corregido de `noctra_core::Parameters` a `Parameters` (ya importado)
+2. ✅ **Schema Introspection:** Cambiado de `PRAGMA table_info(?)` a `information_schema.columns`
+3. ✅ **Doctest:** Agregado `no_run` y import `use noctra_core::datasource::DataSource`
+4. ✅ **Warnings:** Removido import `params` no utilizado
 
-### ⚠️ Limitaciones Actuales
+### ⚠️ Limitaciones Actuales (por diseño v1)
 
-1. **Sin Arrow Integration:** Implementación actual no usa Arrow (requerido por M6 v2)
-2. **Sin Performance Config:** No hay configuración dinámica de threads/memoria
-3. **Sin Prepared Statements Cache:** No usa `prepare_cached()` para performance
-4. **Sin Motor Híbrido:** No hay QueryEngine::Hybrid implementado
+1. **Sin Arrow Integration:** Implementación actual no usa Arrow (opcional, ver M6_CONTINUATION_ANALYSIS.md)
+2. **Sin Performance Config:** No hay configuración dinámica de threads/memoria (Fase 1.5)
+3. **Sin Prepared Statements Cache:** No usa `prepare_cached()` (optimización futura)
+4. **Sin Motor Híbrido:** QueryEngine::Hybrid pendiente para Fase 2
+
+**Nota:** Estas limitaciones son por diseño v1 (pragmático). Ver `docs/M6_CONTINUATION_ANALYSIS.md` para plan de upgrade a v2.
 
 ---
 
@@ -161,21 +189,28 @@ pub mod csv_backend;
 
 ---
 
-## 📋 PLAN DE PUSHEO Y CONTINUACIÓN
+## 📋 ESTADO ACTUAL Y COMMITS
 
-### 🎯 Estrategia de Push
+### ✅ Branch Actual
 
-**Branch:** `milestone/6/phase1-foundation`
+**Branch:** `claude/fix-milestone-6-phase-1-013LgPt6XPSXEHhCAHGTeysm`
+**Estado:** ✅ Pushed to remote
+**Target para PR:** `main` (commit 84ff51a)
 
-**Commits Planificados:**
-1. `feat: Add noctra-duckdb crate foundation` - Crate básico + lib.rs
-2. `feat: Implement DuckDBSource with DataSource trait` - source.rs completo
-3. `feat: Add DuckDB error types` - error.rs
-4. `feat: Add workspace feature flag duckdb-engine` - Cargo.toml updates
-5. `refactor: Remove legacy csv_backend.rs` - Eliminación código legacy
-6. `feat: Update TUI and CLI to use DuckDB backend` - Integración dependencias
-7. `test: Add comprehensive DuckDB integration tests` - Tests (con fixes)
-8. `docs: Update ROADMAP.md for M6 Phase 1 completion` - Documentación
+### ✅ Commits Realizados
+
+**Commits en este branch:**
+1. `cd86433` - fix(noctra-duckdb): Fix M6 Phase 1 - DuckDB tests and schema introspection
+2. `9f4fcad` - docs: Add DuckDB environment configuration files (duckdb.env, .envrc, DUCKDB_SETUP.md)
+3. `ad90534` - docs: Add M6 continuation analysis and strategy
+4. `835f22d` - fix(noctra-duckdb): Remove unused params import
+
+**Archivos Nuevos Creados:**
+- `crates/noctra-duckdb/` - Crate completo con DuckDBSource
+- `duckdb.env` - Variables de entorno para desarrollo
+- `.envrc` - Configuración direnv
+- `docs/DUCKDB_SETUP.md` - Guía de instalación DuckDB
+- `docs/M6_CONTINUATION_ANALYSIS.md` - Análisis estratégico v1 vs v2
 
 ### 🔄 Próximos Pasos (Fase 1.5 - Performance Config)
 
@@ -196,21 +231,55 @@ pub mod csv_backend;
 
 ---
 
-## 🚀 RECOMENDACIONES
+## 🎯 SIGUIENTES PASOS
 
-### Para Push Inmediato
-1. **Arreglar errores de compilación** en tests (5 min)
-2. **Crear PR** con implementación actual
-3. **Merge a main** como `v0.6.0-alpha`
+### ✅ Completado en Esta Sesión
+1. ✅ **Tests fijados** - 9/9 tests pasando
+2. ✅ **Warnings corregidos** - Código limpio sin warnings en noctra-duckdb
+3. ✅ **Documentación actualizada** - M6_CONTINUATION_ANALYSIS.md, DUCKDB_SETUP.md
+4. ✅ **Commits pushed** - Branch listo para PR
 
-### Para Continuación
-1. **Implementar Fase 1.5** (Performance Config) - 2 días
-2. **Fase 2** (Motor Híbrido) - 7 días
-3. **Testing exhaustivo** con datasets reales
-4. **Performance benchmarks** vs implementación anterior
+### 📝 PR Pendiente (GitHub CLI no disponible)
+
+**Título sugerido:**
+```
+feat: M6 Phase 1 - DuckDB Foundation (v0.6.0-alpha1)
+```
+
+**Base branch:** `main` (84ff51a)
+**Head branch:** `claude/fix-milestone-6-phase-1-013LgPt6XPSXEHhCAHGTeysm` (835f22d)
+
+**Descripción:** Ver template completo en salida de comando anterior (incluye resumen de cambios, tests, archivos nuevos, y próximos pasos)
+
+### 🚀 Para Continuación (Opción C - Hybrid Pragmatic)
+
+**Semana 1 (5 días):** Fase 2 - Motor Híbrido
+- Implementar `QueryEngine::Hybrid` en `core/src/engine.rs`
+- Routing automático: archivos → DuckDB, SQLite → SQLite
+- Comando `USE 'file.csv' AS alias`
+- Tests de cross-source JOINs
+
+**Semana 2 (5 días):** Fase 3 & 4 - RQL 4GL + Export
+- `USE` syntax completo (CSV, JSON, Parquet, SQLite)
+- `EXPORT result TO 'output.csv'` command
+- Streaming export para datasets grandes
+
+**Semana 3 (5 días):** Fase 5 & 6 - TUI/UX + Release
+- TUI indicators para DuckDB vs SQLite queries
+- Progress bar para queries largas
+- Release v0.6.0 final
+
+**Timeline:** v0.6.0 final para **30 de noviembre de 2025** (~15 días)
 
 ---
 
-**Estado Final:** 🎯 **FASE 1 COMPLETADA** - Foundation sólida para NQL 2.0
-**Bloqueo:** Tests con errores menores de sintaxis
-**Recomendación:** Push actual como alpha, continuar con performance layer
+## ✅ ESTADO FINAL
+
+**Milestone:** M6 Phase 1 - DuckDB Foundation
+**Estado:** 🎯 **100% COMPLETADO**
+**Tests:** ✅ 9/9 passing
+**Build:** ✅ Exitoso (~20s con DuckDB precompilado)
+**Branch:** ✅ Pushed a remote
+**Próximo paso:** Crear PR para merge a main
+
+**Recomendación:** Seguir con **Opción C (Hybrid Pragmatic)** según M6_CONTINUATION_ANALYSIS.md
