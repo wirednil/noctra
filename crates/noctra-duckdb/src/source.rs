@@ -3,6 +3,7 @@
 //! Provides DuckDBSource that implements the DataSource trait,
 //! enabling file-native queries for CSV, JSON, and Parquet files.
 
+use crate::attachment::{AttachmentConfig, AttachmentRegistry};
 use crate::config::DuckDBConfig;
 use crate::error::{DuckDBError, Result};
 use duckdb::{Connection, Result as DuckResult, Row};
@@ -23,6 +24,8 @@ pub struct DuckDBSource {
     registered_files: HashMap<String, String>,
     /// Configuration settings
     config: DuckDBConfig,
+    /// Attachment registry for cross-database connections
+    attachments: AttachmentRegistry,
 }
 
 impl DuckDBSource {
@@ -46,6 +49,7 @@ impl DuckDBSource {
             name: "duckdb".to_string(),
             registered_files: HashMap::new(),
             config,
+            attachments: AttachmentRegistry::new(),
         })
     }
 
@@ -69,6 +73,7 @@ impl DuckDBSource {
             name: "duckdb".to_string(),
             registered_files: HashMap::new(),
             config,
+            attachments: AttachmentRegistry::new(),
         })
     }
 
@@ -109,12 +114,58 @@ impl DuckDBSource {
     }
 
     /// Attach a SQLite database to DuckDB for cross-source queries
+    ///
+    /// The attachment is automatically registered in the attachment registry
+    /// and can be restored after restart using `restore_attachments()`
     pub fn attach_sqlite(&mut self, db_path: &str, alias: &str) -> Result<()> {
         let conn = self.conn.lock().map_err(|_| DuckDBError::QueryFailed("Mutex poisoned".to_string()))?;
+
+        // Ensure SQLite extension is installed and loaded
+        // INSTALL is idempotent - won't fail if already installed
+        conn.execute("INSTALL sqlite", []).ok(); // Ignore error if already installed
+        conn.execute("LOAD sqlite", [])?;
+
         let sql = format!("ATTACH '{}' AS {} (TYPE SQLITE)", db_path, alias);
         log::debug!("Attaching SQLite DB: {}", sql);
         conn.execute(&sql, [])?;
+
+        // Register in attachment registry for persistence
+        self.attachments.register(AttachmentConfig {
+            db_type: "sqlite".to_string(),
+            path: db_path.to_string(),
+            alias: alias.to_string(),
+            read_only: false,
+        });
+
         Ok(())
+    }
+
+    /// Restore all registered attachments
+    ///
+    /// Call this after connection initialization to restore all previously
+    /// registered database attachments. This is necessary because ATTACH
+    /// statements are non-persistent in DuckDB.
+    pub fn restore_attachments(&self) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| DuckDBError::QueryFailed("Mutex poisoned".to_string()))?;
+
+        // Check if any SQLite attachments exist - if so, ensure extension is loaded
+        let has_sqlite = self.attachments.list().iter().any(|cfg| cfg.db_type == "sqlite");
+        if has_sqlite {
+            conn.execute("INSTALL sqlite", []).ok(); // Ignore error if already installed
+            conn.execute("LOAD sqlite", [])?;
+        }
+
+        for sql in self.attachments.to_sql_commands() {
+            log::debug!("Restoring attachment: {}", sql);
+            conn.execute(&sql, [])?;
+        }
+
+        Ok(())
+    }
+
+    /// Get attachment registry (for inspection or persistence)
+    pub fn attachments(&self) -> &AttachmentRegistry {
+        &self.attachments
     }
 
     /// Get registered files
@@ -407,5 +458,63 @@ mod tests {
         // memory_limit is None by default (DuckDB uses ~80% RAM automatically)
         assert!(source.config().memory_limit.is_none());
         assert!(source.config().threads.is_some());
+    }
+
+    #[test]
+    fn test_attachment_registry() {
+        use crate::attachment::AttachmentConfig;
+
+        let mut source = DuckDBSource::new_in_memory().unwrap();
+
+        // Test registry functionality without requiring SQLite extension download
+        // (which requires internet connectivity)
+
+        // Manually register an attachment
+        source.attachments.register(AttachmentConfig {
+            db_type: "sqlite".to_string(),
+            path: "/path/to/test.db".to_string(),
+            alias: "test_db".to_string(),
+            read_only: false,
+        });
+
+        // Verify it's in the registry
+        assert!(source.attachments().contains("test_db"));
+        assert_eq!(source.attachments().len(), 1);
+
+        // Verify we can get the config
+        let config = source.attachments().get("test_db");
+        assert!(config.is_some());
+        assert_eq!(config.unwrap().path, "/path/to/test.db");
+
+        // Verify to_sql_commands works
+        let commands = source.attachments().to_sql_commands();
+        assert_eq!(commands.len(), 1);
+        assert!(commands[0].contains("test_db"));
+        assert!(commands[0].contains("TYPE sqlite"));
+    }
+
+    #[test]
+    fn test_restore_attachments() {
+        use crate::attachment::AttachmentConfig;
+
+        let mut source = DuckDBSource::new_in_memory().unwrap();
+
+        // Manually register attachment (simulating saved state)
+        source.attachments.register(AttachmentConfig {
+            db_type: "sqlite".to_string(),
+            path: "/path/to/catalog.db".to_string(),
+            alias: "catalog".to_string(),
+            read_only: false,
+        });
+
+        // Test that to_sql_commands generates correct SQL
+        let commands = source.attachments().to_sql_commands();
+        assert_eq!(commands.len(), 1);
+        assert!(commands[0].contains("ATTACH '/path/to/catalog.db'"));
+        assert!(commands[0].contains("AS catalog"));
+        assert!(commands[0].contains("TYPE sqlite"));
+
+        // Note: Actual restore_attachments() execution would require
+        // SQLite extension download from internet, so we only test the SQL generation
     }
 }
