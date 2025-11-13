@@ -1,8 +1,25 @@
 # Milestone 6 — "FABRIC" Implementation Plan
 
+> ⚠️ **DEPRECATION NOTICE**
+>
+> This document (v1) has been superseded by **[M6_IMPLEMENTATION_PLAN_v2.md](M6_IMPLEMENTATION_PLAN_v2.md)** which incorporates critical DuckDB research findings.
+>
+> **Key Changes in v2:**
+> - Arrow integration moved from optional (Phase 5) to **MANDATORY** (Phase 1)
+> - New Phase 1.5: Performance Configuration Layer (2 days)
+> - Timeline extended from 6 to 7 weeks
+> - Dynamic thread configuration (Local vs Remote I/O)
+> - AttachmentRegistry for non-persistent ATTACH statements
+> - Updated performance targets (CSV 10MB: 500ms→200ms)
+> - Mandatory `PER_THREAD_OUTPUT` for Parquet exports
+>
+> **Please refer to [M6_IMPLEMENTATION_PLAN_v2.md](M6_IMPLEMENTATION_PLAN_v2.md) for the current implementation plan.**
+>
+> ---
+
 **Noctra(🦆 DuckDB): Data Fabric Engine**
 **Fecha de Inicio:** 11 de noviembre de 2025
-**Duración:** 6 semanas (11 nov — 23 dic 2025)
+**Duración:** 6 semanas (11 nov — 23 dic 2025) ~~OBSOLETO: Ver v2 para 7 semanas~~
 **Versión Target:** v0.6.0
 **Branch:** `claude/duckdb-integration-*`
 

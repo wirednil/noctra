@@ -17,6 +17,7 @@ tui-textarea = "0.7"
 noctra-core = { path = "../core" }
 noctra-parser = { path = "../parser" }
 noctra-formlib = { path = "../formlib" }
+noctra-duckdb = { path = "../noctra-duckdb" }
 
 # Async runtime
 tokio = { workspace = true, features = ["full"] }

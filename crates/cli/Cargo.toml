@@ -13,6 +13,7 @@ noctra-core = { path = "../core" }
 noctra-parser = { path = "../parser" }
 noctra-formlib = { path = "../formlib" }
 noctra-tui = { path = "../tui" }
+noctra-duckdb = { path = "../noctra-duckdb" }
 
 # CLI framework
 clap = { workspace = true, features = ["derive", "cargo"] }

@@ -4,6 +4,7 @@ members = [
     "crates/parser",
     "crates/cli",
     "crates/tui",
+    "crates/noctra-duckdb",
     # "crates/srv",  # TODO: Habilitar en Milestone 4 (daemon noctrad)
     "crates/formlib",
     "crates/ffi"
@@ -47,6 +48,10 @@ tracing-subscriber = "0.3"
 # Database dependencies
 rusqlite = { version = "0.32", features = ["bundled"] }
 sqlparser = "0.40"
+duckdb = { version = "1.1", features = ["bundled", "parquet", "json"] }
+
+# DuckDB backend
+noctra-duckdb = { path = "crates/noctra-duckdb" }
 
 # HTTP client
 reqwest = { version = "0.11", features = ["json"] }

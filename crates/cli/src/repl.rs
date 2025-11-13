@@ -4,7 +4,6 @@ use crate::cli::ReplArgs;
 use crate::config::CliConfig;
 use crate::output::format_result_set;
 use noctra_core::{Executor, NoctraError, RqlQuery, Session, SqliteBackend};
-use noctra_core::{CsvDataSource, CsvOptions};
 use noctra_parser::{RqlProcessor, RqlStatement};
 use std::collections::HashMap;
 use std::io::{self, Write};
@@ -295,32 +294,33 @@ impl Repl {
     /// Manejar comando USE SOURCE
     fn handle_use_source(&mut self, path: &str, alias: Option<&str>, _options: &HashMap<String, String>) -> Result<()> {
         // Detectar tipo de fuente por extensión
-        if path.ends_with(".csv") {
-            // Crear fuente CSV
+        if path.ends_with(".csv") || path.ends_with(".json") || path.ends_with(".parquet") {
+            // Crear fuente DuckDB (reemplaza CsvDataSource)
             let source_name = alias.unwrap_or(path);
-            eprintln!("[DEBUG] Loading CSV source: {} as {}", path, source_name);
+            eprintln!("[DEBUG] Loading DuckDB source: {} as {}", path, source_name);
 
-            let csv_source = CsvDataSource::new(
-                path,
-                source_name.to_string(),
-                CsvOptions::default()
-            ).map_err(|e| NoctraError::Internal(format!("Error loading CSV: {}", e)))?;
+            // Usar DuckDBSource desde noctra-duckdb
+            let mut duckdb_source = noctra_duckdb::DuckDBSource::new_in_memory()
+                .map_err(|e| NoctraError::Internal(format!("Error creating DuckDB source: {}", e)))?;
 
-            eprintln!("[DEBUG] CSV source created successfully");
+            duckdb_source.register_file(path, &source_name)
+                .map_err(|e| NoctraError::Internal(format!("Error registering file: {}", e)))?;
+
+            eprintln!("[DEBUG] DuckDB source created successfully");
 
             // Registrar fuente
             self.executor.source_registry_mut()
-                .register(source_name.to_string(), Box::new(csv_source))
+                .register(source_name.to_string(), Box::new(duckdb_source))
                 .map_err(|e| NoctraError::Internal(format!("Error registering source: {}", e)))?;
 
-            eprintln!("[DEBUG] CSV source registered");
+            eprintln!("[DEBUG] DuckDB source registered");
             eprintln!("[DEBUG] Active source after registration: {:?}",
                 self.executor.source_registry().active().map(|s| s.name()));
 
-            println!("✅ Fuente CSV '{}' cargada como '{}'", path, source_name);
+            println!("✅ Fuente '{}' cargada como '{}' (DuckDB)", path, source_name);
         } else {
             println!("❌ Tipo de fuente no soportado: {}", path);
-            println!("   (Actualmente solo se soportan archivos .csv)");
+            println!("   (Soportados: .csv, .json, .parquet)");
         }
 
         Ok(())
