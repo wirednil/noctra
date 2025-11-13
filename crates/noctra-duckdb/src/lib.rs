@@ -27,7 +27,9 @@ pub mod source;
 pub mod engine;
 pub mod extensions;
 pub mod error;
+pub mod config;
 
 pub use source::DuckDBSource;
 pub use engine::DuckDBEngine;
 pub use error::{DuckDBError, Result};
+pub use config::DuckDBConfig;

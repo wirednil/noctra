@@ -9,6 +9,8 @@ noctra-core = { path = "../core" }
 anyhow = "1.0"
 thiserror = "1.0"
 log = "0.4"
+num_cpus = "1.16"
+serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
 tempfile = "3.0"

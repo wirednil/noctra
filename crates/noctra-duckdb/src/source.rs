@@ -3,6 +3,7 @@
 //! Provides DuckDBSource that implements the DataSource trait,
 //! enabling file-native queries for CSV, JSON, and Parquet files.
 
+use crate::config::DuckDBConfig;
 use crate::error::{DuckDBError, Result};
 use duckdb::{Connection, Result as DuckResult, Row};
 use noctra_core::datasource::{ColumnInfo, DataSource, SourceType, TableInfo};
@@ -20,27 +21,60 @@ pub struct DuckDBSource {
     name: String,
     /// Registered file tables (alias -> file_path)
     registered_files: HashMap<String, String>,
+    /// Configuration settings
+    config: DuckDBConfig,
 }
 
 impl DuckDBSource {
-    /// Create a new DuckDB source with in-memory database
+    /// Create a new DuckDB source with in-memory database and default configuration
     pub fn new_in_memory() -> Result<Self> {
+        Self::new_in_memory_with_config(DuckDBConfig::default())
+    }
+
+    /// Create a new DuckDB source with in-memory database and custom configuration
+    pub fn new_in_memory_with_config(config: DuckDBConfig) -> Result<Self> {
         let conn = Connection::open_in_memory()?;
+
+        // Apply configuration settings
+        for sql in config.to_sql_commands() {
+            log::debug!("Applying config: {}", sql);
+            conn.execute(&sql, [])?;
+        }
+
         Ok(Self {
             conn: Mutex::new(conn),
             name: "duckdb".to_string(),
             registered_files: HashMap::new(),
+            config,
         })
     }
 
-    /// Create a new DuckDB source with persistent database file
+    /// Create a new DuckDB source with persistent database file and default configuration
     pub fn new_with_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+        Self::new_with_file_with_config(path, DuckDBConfig::default())
+    }
+
+    /// Create a new DuckDB source with persistent database file and custom configuration
+    pub fn new_with_file_with_config<P: AsRef<Path>>(path: P, config: DuckDBConfig) -> Result<Self> {
         let conn = Connection::open(path)?;
+
+        // Apply configuration settings
+        for sql in config.to_sql_commands() {
+            log::debug!("Applying config: {}", sql);
+            conn.execute(&sql, [])?;
+        }
+
         Ok(Self {
             conn: Mutex::new(conn),
             name: "duckdb".to_string(),
             registered_files: HashMap::new(),
+            config,
         })
+    }
+
+    /// Get current configuration
+    pub fn config(&self) -> &DuckDBConfig {
+        &self.config
     }
 
     /// Register a file as a virtual table using DuckDB's read_*_auto functions
@@ -339,5 +373,39 @@ mod tests {
         let mut source = DuckDBSource::new_in_memory().unwrap();
         let result = source.register_file("test.txt", "invalid");
         assert!(matches!(result, Err(DuckDBError::UnsupportedFileType(_))));
+    }
+
+    #[test]
+    fn test_custom_configuration() {
+        use crate::config::DuckDBConfig;
+
+        let config = DuckDBConfig {
+            memory_limit: Some("8GB".to_string()),
+            threads: Some(4),
+            catalog_error_max_schemas: Some(5),
+            enable_profiling: false,
+        };
+
+        let source = DuckDBSource::new_in_memory_with_config(config.clone()).unwrap();
+
+        // Verify config is stored
+        assert_eq!(source.config().threads, Some(4));
+        assert_eq!(source.config().memory_limit, Some("8GB".to_string()));
+
+        // Verify config was applied (query DuckDB settings)
+        let result = source.query("SELECT current_setting('threads') as threads", &Parameters::new());
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result.rows.len(), 1);
+    }
+
+    #[test]
+    fn test_default_configuration() {
+        let source = DuckDBSource::new_in_memory().unwrap();
+
+        // Should have default config
+        // memory_limit is None by default (DuckDB uses ~80% RAM automatically)
+        assert!(source.config().memory_limit.is_none());
+        assert!(source.config().threads.is_some());
     }
 }
