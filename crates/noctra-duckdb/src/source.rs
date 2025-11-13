@@ -4,7 +4,7 @@
 //! enabling file-native queries for CSV, JSON, and Parquet files.
 
 use crate::error::{DuckDBError, Result};
-use duckdb::{params, Connection, Result as DuckResult, Row};
+use duckdb::{Connection, Result as DuckResult, Row};
 use noctra_core::datasource::{ColumnInfo, DataSource, SourceType, TableInfo};
 use noctra_core::types::{Column, Parameters, ResultSet, Row as NoctraRow, Value};
 use std::collections::HashMap;
