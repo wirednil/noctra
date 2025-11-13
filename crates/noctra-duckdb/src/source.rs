@@ -167,8 +167,8 @@ impl DataSource for DuckDBSource {
 
         let conn = self.conn.lock().map_err(|_| noctra_core::error::NoctraError::Internal("Mutex poisoned".to_string()))?;
 
-        // Prepare and execute query
-        let mut stmt = conn.prepare(sql).map_err(|e| noctra_core::error::NoctraError::Internal(format!("DuckDB prepare error: {}", e)))?;
+        // Prepare and execute query (using cached prepared statements for performance)
+        let mut stmt = conn.prepare_cached(sql).map_err(|e| noctra_core::error::NoctraError::Internal(format!("DuckDB prepare error: {}", e)))?;
         let mut rows_result = stmt
             .query([])
             .map_err(|e| noctra_core::error::NoctraError::Internal(format!("DuckDB query error: {}", e)))?;
