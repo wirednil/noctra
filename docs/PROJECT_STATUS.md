@@ -1161,9 +1161,20 @@ Con M5 completado, Noctra ahora tiene:
 ## 🎯 Milestone 6 - Noctra(🦆) "FABRIC" [EN PROGRESO]
 
 **Fecha de Inicio:** 11 de noviembre de 2025
-**Duración:** 6 semanas (11 nov — 23 dic 2025)
+**Duración:** 7 semanas (11 nov — 23 dic 2025) - Extended from 6 weeks
 **Versión Target:** v0.6.0
-**Estado:** 📋 Fase 1 - Fundación
+**Estado:** 📋 Fase 1 - Fundación (con Phase 1.5 planificada)
+**Plan de Implementación:** [M6_IMPLEMENTATION_PLAN_v2.md](M6_IMPLEMENTATION_PLAN_v2.md)
+
+> ℹ️ **NOTE:** M6 plan actualizado a v2 basado en investigación crítica de DuckDB que reveló:
+> - Arrow integration es **MANDATORY** (no opcional como en v1)
+> - Necesidad de Phase 1.5: Performance Configuration Layer
+> - Dynamic thread configuration (Local: CPU cores, Remote: 2-5x cores)
+> - AttachmentRegistry para manejar ATTACH no-persistente
+> - Performance targets actualizados (CSV 10MB: 500ms→200ms)
+> - `PER_THREAD_OUTPUT` mandatory para exports Parquet parallelos
+>
+> Ver [M6_IMPLEMENTATION_PLAN_v2.md](M6_IMPLEMENTATION_PLAN_v2.md) para el plan completo research-driven.
 
 ### Vision Statement
 

@@ -1072,10 +1072,21 @@ FINANCE   ████████████ 34
 
 ## Milestone 6: Noctra 2.0 "FABRIC"
 
-**Duration:** 2 weeks
-**Status:** 📋 Planning Phase
-**Target Date:** 2026-03-01
-**Version:** v2.0.0
+**Duration:** 7 weeks (Extended from 6 weeks, v2 plan)
+**Status:** 📋 Planning Phase (Fase 1 en progreso)
+**Target Date:** 2025-12-23 (Updated from 2026-03-01)
+**Version:** v2.0.0 (v0.6.0)
+**Implementation Plan:** [M6_IMPLEMENTATION_PLAN_v2.md](M6_IMPLEMENTATION_PLAN_v2.md)
+
+> ℹ️ **NOTE:** M6 timeline extended to 7 weeks to incorporate critical DuckDB research findings including:
+> - Mandatory Arrow integration (Phase 1, not Phase 5)
+> - New Phase 1.5: Performance Configuration Layer (2 days)
+> - Dynamic thread configuration based on I/O type (Local vs Remote)
+> - AttachmentRegistry for non-persistent ATTACH statements
+> - Updated performance targets (CSV 10MB: 500ms→200ms)
+> - Mandatory `PER_THREAD_OUTPUT` for parallel Parquet exports
+>
+> See [M6_IMPLEMENTATION_PLAN_v2.md](M6_IMPLEMENTATION_PLAN_v2.md) for detailed research-driven implementation plan.
 
 ### Vision Statement
 
