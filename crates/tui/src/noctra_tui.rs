@@ -280,7 +280,15 @@ impl<'a> NoctraTui<'a> {
             dialog_selected,
         );
         Self::render_separator(frame, chunks[2]);
-        Self::render_shortcuts(frame, chunks[3], mode, help_visible);
+        Self::render_shortcuts(
+            frame,
+            chunks[3],
+            mode,
+            help_visible,
+            current_results,
+            scroll_offset_x,
+            scroll_offset_y,
+        );
     }
 
     /// Renderizar barra de header simplificada
@@ -622,7 +630,15 @@ impl<'a> NoctraTui<'a> {
     }
 
     /// Renderizar barra de shortcuts
-    fn render_shortcuts(frame: &mut Frame, area: Rect, mode: UiMode, help_visible: bool) {
+    fn render_shortcuts(
+        frame: &mut Frame,
+        area: Rect,
+        mode: UiMode,
+        help_visible: bool,
+        current_results: Option<&QueryResults>,
+        scroll_offset_x: usize,
+        scroll_offset_y: usize,
+    ) {
         if help_visible {
             // Mostrar ayuda completa
             let shortcuts = vec![
@@ -630,12 +646,12 @@ impl<'a> NoctraTui<'a> {
                 ("End", "Terminar sesión de Noctra"),
                 ("F1", "Ocultar ayuda"),
                 ("F8", "Interrumpir procesamiento"),
-                ("Prox. pantal", "Comando siguiente"),
-                ("Pantall. pre", "Comando anterior"),
-                ("Insert", "Insertar espacio"),
-                ("Delete", "Borrar un carácter"),
-                ("Alt+r", "Leer desde archivo"),
-                ("Alt+w", "Grabar en archivo"),
+                ("0/$", "Primera/última columna"),
+                ("w/b", "Saltar 5 cols adelante/atrás"),
+                ("Ctrl+←/→", "Primera/última columna"),
+                ("h/j/k/l", "Navegar (vim)"),
+                ("g/G", "Primera/última fila"),
+                ("q/Esc", "Volver a modo comando"),
             ];
 
             let lines: Vec<Line> = shortcuts
@@ -670,21 +686,79 @@ impl<'a> NoctraTui<'a> {
                 UiMode::Dialog => "-- DIÁLOGO --",
             };
 
+            // Si estamos en modo Result y hay resultados, mostrar indicador de posición
+            let position_info = if matches!(mode, UiMode::Result) {
+                if let Some(results) = current_results {
+                    let total_cols = results.columns.len();
+                    let total_rows = results.rows.len();
+
+                    if total_cols > 0 && total_rows > 0 {
+                        // Calcular porcentaje de progreso (basado en columnas)
+                        let progress_pct = if total_cols > 1 {
+                            ((scroll_offset_x as f64 / (total_cols - 1) as f64) * 100.0) as usize
+                        } else {
+                            0
+                        };
+
+                        // Crear barra de progreso visual (10 caracteres)
+                        let bar_width = 10;
+                        let filled = (progress_pct * bar_width / 100).min(bar_width);
+                        let progress_bar = format!(
+                            "[{}{}]",
+                            "=".repeat(filled),
+                            " ".repeat(bar_width - filled)
+                        );
+
+                        // Mostrar rango de columnas y filas visibles
+                        let col_info = format!("Col {}/{}", scroll_offset_x + 1, total_cols);
+                        let row_info = format!("Row {}/{}", scroll_offset_y + 1, total_rows);
+
+                        format!(" {} {}% | {} | {}", progress_bar, progress_pct, col_info, row_info)
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            };
+
             let help_hint = " F1: Ayuda";
 
-            // Calcular padding para centrar el modo y alinear ayuda a la derecha
-            let total_content_len = mode_text.len() + help_hint.len();
-            let padding_len = area.width.saturating_sub(total_content_len as u16);
-            let left_padding = padding_len / 2;
-            let right_padding = padding_len - left_padding;
+            // Construir la línea de status
+            let status_line = if position_info.is_empty() {
+                // Sin información de posición, centrar el modo
+                let total_content_len = mode_text.len() + help_hint.len();
+                let padding_len = area.width.saturating_sub(total_content_len as u16);
+                let left_padding = padding_len / 2;
+                let right_padding = padding_len - left_padding;
 
-            let status_line = format!(
-                "{}{}{}{}",
-                " ".repeat(left_padding as usize),
-                mode_text,
-                " ".repeat(right_padding as usize),
-                help_hint
-            );
+                format!(
+                    "{}{}{}{}",
+                    " ".repeat(left_padding as usize),
+                    mode_text,
+                    " ".repeat(right_padding as usize),
+                    help_hint
+                )
+            } else {
+                // Con información de posición, distribuir: modo | info | ayuda
+                let total_content_len = mode_text.len() + position_info.len() + help_hint.len();
+                let available_padding = area.width.saturating_sub(total_content_len as u16) as usize;
+
+                // Distribuir padding: 1/3 antes del modo, 2/3 entre info y ayuda
+                let left_pad = available_padding / 3;
+                let right_pad = available_padding - left_pad;
+
+                format!(
+                    "{}{}{}{}{}",
+                    " ".repeat(left_pad),
+                    mode_text,
+                    position_info,
+                    " ".repeat(right_pad),
+                    help_hint
+                )
+            };
 
             let status_bar = Paragraph::new(status_line)
                 .style(
@@ -828,8 +902,47 @@ impl<'a> NoctraTui<'a> {
                     self.result_scroll_offset_y = results.rows.len().saturating_sub(1);
                 }
             }
+            KeyCode::Char('0') => {
+                // Vim-style: ir a primera columna
+                self.result_scroll_offset_x = 0;
+            }
+            KeyCode::Char('$') => {
+                // Vim-style: ir a última columna
+                if let Some(results) = &self.current_results {
+                    self.result_scroll_offset_x = results.columns.len().saturating_sub(1);
+                }
+            }
+            KeyCode::Char('w') => {
+                // Vim-style: saltar 5 columnas adelante (word-forward)
+                if let Some(results) = &self.current_results {
+                    self.result_scroll_offset_x = (self.result_scroll_offset_x + 5)
+                        .min(results.columns.len().saturating_sub(1));
+                }
+            }
+            KeyCode::Char('b') => {
+                // Vim-style: saltar 5 columnas atrás (word-backward)
+                self.result_scroll_offset_x = self.result_scroll_offset_x.saturating_sub(5);
+            }
             _ => {}
         }
+
+        // Manejar Ctrl+Left y Ctrl+Right separadamente
+        if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Left => {
+                    // Ctrl+Left: ir a primera columna (como '0')
+                    self.result_scroll_offset_x = 0;
+                }
+                KeyCode::Right => {
+                    // Ctrl+Right: ir a última columna (como '$')
+                    if let Some(results) = &self.current_results {
+                        self.result_scroll_offset_x = results.columns.len().saturating_sub(1);
+                    }
+                }
+                _ => {}
+            }
+        }
+
         Ok(())
     }
 
