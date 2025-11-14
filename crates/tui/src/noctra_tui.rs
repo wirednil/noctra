@@ -319,14 +319,25 @@ impl<'a> NoctraTui<'a> {
                 Row::new(cells).height(1)
             });
 
-            // Calcular ancho de columnas automáticamente
-            let col_widths: Vec<Constraint> = results
-                .columns
+            // Calcular ancho de columnas basado en contenido
+            let mut col_widths: Vec<usize> = results.columns.iter().map(|col| col.len()).collect();
+
+            // Actualizar anchos considerando valores de todas las filas
+            for row in &results.rows {
+                for (i, cell) in row.iter().enumerate() {
+                    if i < col_widths.len() {
+                        col_widths[i] = col_widths[i].max(cell.len());
+                    }
+                }
+            }
+
+            // Agregar padding (2 espacios por lado) y convertir a Constraint
+            let col_constraints: Vec<Constraint> = col_widths
                 .iter()
-                .map(|_| Constraint::Percentage((100 / results.columns.len().max(1)) as u16))
+                .map(|&width| Constraint::Length((width + 2).max(4) as u16))
                 .collect();
 
-            let table = Table::new(rows, col_widths)
+            let table = Table::new(rows, col_constraints)
                 .header(header)
                 .block(
                     Block::default()

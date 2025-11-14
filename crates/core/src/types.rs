@@ -260,33 +260,53 @@ impl ResultSet {
 
         let mut result = String::new();
 
-        // Header
-        let headers: Vec<String> = self.columns.iter().map(|col| col.name.clone()).collect();
-        result.push_str(&headers.join(" | "));
+        // Calcular ancho máximo de cada columna
+        let mut col_widths: Vec<usize> = self.columns.iter().map(|col| col.name.len()).collect();
+
+        // Actualizar anchos considerando valores de todas las filas
+        for row in &self.rows {
+            for (i, _) in self.columns.iter().enumerate() {
+                let value_str = row
+                    .get(i)
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "NULL".to_string());
+                col_widths[i] = col_widths[i].max(value_str.len());
+            }
+        }
+
+        // Header con padding
+        let header_parts: Vec<String> = self
+            .columns
+            .iter()
+            .enumerate()
+            .map(|(i, col)| format!(" {:width$} ", col.name, width = col_widths[i]))
+            .collect();
+        result.push_str(&header_parts.join("|"));
         result.push('\n');
 
         // Separador
-        let separators: Vec<String> = self
-            .columns
+        let separators: Vec<String> = col_widths
             .iter()
-            .map(|col| "-".repeat(col.name.len().max(8)))
+            .map(|&width| "-".repeat(width + 2)) // +2 para los espacios alrededor
             .collect();
-        result.push_str(&separators.join("-+-"));
+        result.push_str(&separators.join("+"));
         result.push('\n');
 
-        // Filas
+        // Filas con padding
         for row in &self.rows {
-            let values: Vec<String> = self
+            let row_parts: Vec<String> = self
                 .columns
                 .iter()
                 .enumerate()
                 .map(|(i, _)| {
-                    row.get(i)
+                    let value_str = row
+                        .get(i)
                         .map(|v| v.to_string())
-                        .unwrap_or_else(|| "NULL".to_string())
+                        .unwrap_or_else(|| "NULL".to_string());
+                    format!(" {:width$} ", value_str, width = col_widths[i])
                 })
                 .collect();
-            result.push_str(&values.join(" | "));
+            result.push_str(&row_parts.join("|"));
             result.push('\n');
         }
 
