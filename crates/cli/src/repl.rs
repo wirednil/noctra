@@ -57,6 +57,9 @@ pub struct Repl {
 
     /// Sesión actual
     session: Session,
+
+    /// Buffer para statements multi-línea
+    multiline_buffer: String,
 }
 
 impl Repl {
@@ -76,6 +79,7 @@ impl Repl {
             handler,
             executor,
             session,
+            multiline_buffer: String::new(),
         })
     }
 
@@ -114,7 +118,31 @@ impl Repl {
     fn process_input(&mut self, input: &str) -> Result<bool> {
         let trimmed = input.trim();
 
-        // Comandos especiales
+        // Si estamos en modo multi-línea, acumular input
+        if matches!(self.handler.state, ReplState::MultiLine) {
+            // Agregar línea al buffer
+            if !self.multiline_buffer.is_empty() {
+                self.multiline_buffer.push('\n');
+            }
+            self.multiline_buffer.push_str(input);
+
+            // Si termina con ';', ejecutar el query completo
+            if trimmed.ends_with(';') {
+                let query = self.multiline_buffer.clone();
+                self.multiline_buffer.clear();
+                self.handler.state = ReplState::Ready;
+
+                // Agregar a historial
+                self.handler.history.push(query.clone());
+
+                return self.execute_query(&query);
+            }
+
+            // Continuar acumulando
+            return Ok(false);
+        }
+
+        // Comandos especiales (solo en modo Ready)
         if trimmed.is_empty() {
             return Ok(false);
         }
@@ -135,6 +163,21 @@ impl Repl {
 
         if trimmed.starts_with(':') {
             return self.handle_special_command(trimmed);
+        }
+
+        // Detectar si es un statement incompleto (no termina con ';')
+        // Los comandos USE y SHOW suelen ser de una línea, otros SQL pueden ser multi-línea
+        let is_single_line_command = trimmed.to_uppercase().starts_with("USE ")
+            || trimmed.to_uppercase().starts_with("SHOW ")
+            || trimmed.to_uppercase().starts_with("DESCRIBE ")
+            || trimmed.to_uppercase().starts_with("LET ")
+            || trimmed.to_uppercase().starts_with("UNSET ");
+
+        // Si no termina con ';' y no es comando de una sola línea, entrar en modo multi-línea
+        if !trimmed.ends_with(';') && !is_single_line_command {
+            self.multiline_buffer = input.to_string();
+            self.handler.state = ReplState::MultiLine;
+            return Ok(false);
         }
 
         // Agregar a historial
