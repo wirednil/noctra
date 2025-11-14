@@ -380,8 +380,8 @@ impl<'a> NoctraTui<'a> {
             let start_col = scroll_offset_x.min(results.columns.len().saturating_sub(1));
 
             for i in start_col..results.columns.len() {
-                // +2 para padding, +2 para " │" separador (espacio + barra)
-                let col_width = (col_widths[i] + 4).max(6) as u16;
+                // +3 para: contenido + separador '│' + padding (2 espacios)
+                let col_width = (col_widths[i] + 3).max(5) as u16;
                 if current_width + col_width <= available_width {
                     visible_columns.push(i);
                     visible_widths.push(col_width);
@@ -394,7 +394,7 @@ impl<'a> NoctraTui<'a> {
             // Si no hay columnas visibles, mostrar al menos una
             if visible_columns.is_empty() && !results.columns.is_empty() {
                 visible_columns.push(start_col);
-                visible_widths.push((col_widths[start_col] + 4).max(6) as u16);
+                visible_widths.push((col_widths[start_col] + 3).max(5) as u16);
             }
 
             // Determinar qué filas son visibles basado en el scroll vertical
@@ -402,7 +402,7 @@ impl<'a> NoctraTui<'a> {
             let end_row = (start_row + available_height as usize).min(results.rows.len());
             let visible_rows = &results.rows[start_row..end_row];
 
-            // Calcular tamaño de la tabla visible (separadores ya incluidos en col_widths)
+            // Calcular tamaño de la tabla visible (separadores ya incluidos en visible_widths)
             let table_width = visible_widths.iter().sum::<u16>() + 2; // +2 para bordes
 
             let table_height = (visible_rows.len() + 3).min(area.height as usize) as u16; // +3 para header y bordes
@@ -415,15 +415,18 @@ impl<'a> NoctraTui<'a> {
                 height: table_height,
             };
 
-            // Crear header con columnas visibles y separadores verticales
+            // Crear header con columnas visibles y separadores
             let header_cells: Vec<Cell> = visible_columns.iter().enumerate().map(|(idx, &i)| {
                 let col_name = &results.columns[i];
-                // Agregar separador vertical después de cada columna excepto la última
+                let col_width = col_widths[i];
+
+                // Formatear con ancho fijo y agregar separador excepto en la última columna
                 let text = if idx < visible_columns.len() - 1 {
-                    format!("{} │", col_name)
+                    format!("{:width$}│", col_name, width = col_width)
                 } else {
                     col_name.to_string()
                 };
+
                 Cell::from(text)
                     .style(Style::default().add_modifier(Modifier::BOLD))
             }).collect();
@@ -432,16 +435,19 @@ impl<'a> NoctraTui<'a> {
                 .style(Style::default().fg(Color::Yellow))
                 .height(1);
 
-            // Crear filas visibles con solo las columnas visibles y separadores verticales
+            // Crear filas visibles con columnas alineadas y separadores
             let rows = visible_rows.iter().map(|row| {
                 let cells: Vec<Cell> = visible_columns.iter().enumerate().map(|(idx, &i)| {
                     let cell_text = row.get(i).map(|s| s.as_str()).unwrap_or("");
-                    // Agregar separador vertical después de cada columna excepto la última
+                    let col_width = col_widths[i];
+
+                    // Formatear con ancho fijo y agregar separador excepto en la última columna
                     let text = if idx < visible_columns.len() - 1 {
-                        format!("{} │", cell_text)
+                        format!("{:width$}│", cell_text, width = col_width)
                     } else {
                         cell_text.to_string()
                     };
+
                     Cell::from(text)
                 }).collect();
                 Row::new(cells).height(1)
