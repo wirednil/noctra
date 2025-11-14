@@ -185,6 +185,13 @@ impl<'a> NoctraTui<'a> {
                     source_name
                 });
 
+            // Obtener el último comando del historial
+            let last_command = if !self.command_history.is_empty() {
+                Some(self.command_history.last().unwrap().as_str())
+            } else {
+                None
+            };
+
             self.terminal.draw(|frame| {
                 Self::render_frame(
                     frame,
@@ -198,6 +205,7 @@ impl<'a> NoctraTui<'a> {
                     &dialog_options,
                     dialog_selected,
                     active_source.as_deref(),
+                    last_command,
                 );
             })?;
 
@@ -244,6 +252,7 @@ impl<'a> NoctraTui<'a> {
         dialog_options: &[String],
         dialog_selected: usize,
         active_source: Option<&str>,
+        last_command: Option<&str>,
     ) {
         let size = frame.area();
 
@@ -259,7 +268,7 @@ impl<'a> NoctraTui<'a> {
             .split(size);
 
         // Renderizar componentes
-        Self::render_header(frame, chunks[0], mode, command_number, active_source);
+        Self::render_header(frame, chunks[0], mode, command_number, active_source, last_command);
         Self::render_workspace(
             frame,
             chunks[1],
@@ -277,7 +286,7 @@ impl<'a> NoctraTui<'a> {
     }
 
     /// Renderizar barra de header
-    fn render_header(frame: &mut Frame, area: Rect, mode: UiMode, command_number: usize, active_source: Option<&str>) {
+    fn render_header(frame: &mut Frame, area: Rect, mode: UiMode, command_number: usize, active_source: Option<&str>, last_command: Option<&str>) {
         let mode_text = match mode {
             UiMode::Command => "INSERTAR",
             UiMode::Result => "RESULTADO",
@@ -294,7 +303,19 @@ impl<'a> NoctraTui<'a> {
             String::new()
         };
 
-        let cmd_text = format!("Cmd: {}───", command_number);
+        // Mostrar el comando actual o el número si no hay comando
+        let cmd_text = if let Some(cmd) = last_command {
+            // Truncar comando largo para evitar overflow
+            let max_cmd_len = 50;
+            let display_cmd = if cmd.len() > max_cmd_len {
+                format!("{}...", &cmd[..max_cmd_len])
+            } else {
+                cmd.to_string()
+            };
+            format!("{}───", display_cmd)
+        } else {
+            format!("Cmd: {}───", command_number)
+        };
 
         // Calcular padding para alinear a la derecha
         let padding_len = area
