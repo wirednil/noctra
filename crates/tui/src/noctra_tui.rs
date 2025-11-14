@@ -73,6 +73,9 @@ pub struct NoctraTui<'a> {
 
     /// Flag para salir del TUI
     should_quit: bool,
+
+    /// Flag para mostrar/ocultar ayuda de shortcuts
+    help_visible: bool,
 }
 
 /// Resultados de una query SQL
@@ -140,6 +143,7 @@ impl<'a> NoctraTui<'a> {
             dialog_options: Vec::new(),
             dialog_selected: 0,
             should_quit: false,
+            help_visible: false,
         })
     }
 
@@ -148,7 +152,6 @@ impl<'a> NoctraTui<'a> {
         while !self.should_quit {
             // Renderizar
             let mode = self.mode;
-            let command_number = self.command_number;
             let current_results = self.current_results.clone();
             let dialog_message = self.dialog_message.clone();
             let dialog_options = self.dialog_options.clone();
@@ -185,18 +188,12 @@ impl<'a> NoctraTui<'a> {
                     source_name
                 });
 
-            // Obtener el último comando del historial
-            let last_command = if !self.command_history.is_empty() {
-                Some(self.command_history.last().unwrap().as_str())
-            } else {
-                None
-            };
+            let help_visible = self.help_visible;
 
             self.terminal.draw(|frame| {
                 Self::render_frame(
                     frame,
                     mode,
-                    command_number,
                     &mut self.command_editor,
                     current_results.as_ref(),
                     self.result_scroll_offset_x,
@@ -205,7 +202,7 @@ impl<'a> NoctraTui<'a> {
                     &dialog_options,
                     dialog_selected,
                     active_source.as_deref(),
-                    last_command,
+                    help_visible,
                 );
             })?;
 
@@ -243,7 +240,6 @@ impl<'a> NoctraTui<'a> {
     fn render_frame(
         frame: &mut Frame,
         mode: UiMode,
-        command_number: usize,
         command_editor: &mut TextArea,
         current_results: Option<&QueryResults>,
         scroll_offset_x: usize,
@@ -252,23 +248,25 @@ impl<'a> NoctraTui<'a> {
         dialog_options: &[String],
         dialog_selected: usize,
         active_source: Option<&str>,
-        last_command: Option<&str>,
+        help_visible: bool,
     ) {
         let size = frame.area();
 
         // Layout principal: Header + Workspace + Separator + Shortcuts
+        // El footer cambia de tamaño según si help_visible está activo
+        let footer_height = if help_visible { 7 } else { 1 };
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3), // Header
+                Constraint::Length(1), // Header simplificado
                 Constraint::Min(10),   // Workspace (área dinámica)
                 Constraint::Length(1), // Separator
-                Constraint::Length(7), // Shortcuts bar
+                Constraint::Length(footer_height), // Status bar / Shortcuts
             ])
             .split(size);
 
         // Renderizar componentes
-        Self::render_header(frame, chunks[0], mode, command_number, active_source, last_command);
+        Self::render_header(frame, chunks[0], active_source);
         Self::render_workspace(
             frame,
             chunks[1],
@@ -282,48 +280,26 @@ impl<'a> NoctraTui<'a> {
             dialog_selected,
         );
         Self::render_separator(frame, chunks[2]);
-        Self::render_shortcuts(frame, chunks[3]);
+        Self::render_shortcuts(frame, chunks[3], mode, help_visible);
     }
 
-    /// Renderizar barra de header
-    fn render_header(frame: &mut Frame, area: Rect, mode: UiMode, command_number: usize, active_source: Option<&str>, last_command: Option<&str>) {
-        let mode_text = match mode {
-            UiMode::Command => "INSERTAR",
-            UiMode::Result => "RESULTADO",
-            UiMode::Form => "FORMULARIO",
-            UiMode::Dialog => "DIÁLOGO",
-        };
+    /// Renderizar barra de header simplificada
+    fn render_header(frame: &mut Frame, area: Rect, active_source: Option<&str>) {
+        // Formato: ──[ SQL Noctra 0.1.0 ]── src: products ────────
+        let base_text = "──[ SQL Noctra 0.1.0 ]──";
 
-        let header_text = format!("──( {} ) SQL Noctra 0.1.0", mode_text);
-
-        // Agregar indicador de fuente activa si existe
         let source_text = if let Some(source_name) = active_source {
-            format!(" ── Fuente: {} ──", source_name)
+            format!(" src: {} ", source_name)
         } else {
             String::new()
         };
 
-        // Mostrar el comando actual o el número si no hay comando
-        let cmd_text = if let Some(cmd) = last_command {
-            // Truncar comando largo para evitar overflow
-            let max_cmd_len = 50;
-            let display_cmd = if cmd.len() > max_cmd_len {
-                format!("{}...", &cmd[..max_cmd_len])
-            } else {
-                cmd.to_string()
-            };
-            format!("{}───", display_cmd)
-        } else {
-            format!("Cmd: {}───", command_number)
-        };
-
-        // Calcular padding para alinear a la derecha
-        let padding_len = area
-            .width
-            .saturating_sub(header_text.len() as u16 + source_text.len() as u16 + cmd_text.len() as u16);
+        // Calcular padding para llenar el resto de la línea
+        let content_len = base_text.len() + source_text.len();
+        let padding_len = area.width.saturating_sub(content_len as u16);
         let padding = "─".repeat(padding_len as usize);
 
-        let full_header = format!("{}{}{}{}", header_text, source_text, padding, cmd_text);
+        let full_header = format!("{}{}{}", base_text, source_text, padding);
 
         let header = Paragraph::new(full_header)
             .style(
@@ -646,48 +622,91 @@ impl<'a> NoctraTui<'a> {
     }
 
     /// Renderizar barra de shortcuts
-    fn render_shortcuts(frame: &mut Frame, area: Rect) {
-        let shortcuts = vec![
-            ("F5", "Procesar comando"),
-            ("End", "Terminar sesión de Noctra"),
-            ("F1", "Ayuda comandos editor"),
-            ("F8", "Interrumpir procesamiento"),
-            ("Prox. pantal", "Comando siguiente"),
-            ("Pantall. pre", "Comando anterior"),
-            ("Insert", "Insertar espacio"),
-            ("Delete", "Borrar un carácter"),
-            ("Alt+r", "Leer desde archivo"),
-            ("Alt+w", "Grabar en archivo"),
-        ];
+    fn render_shortcuts(frame: &mut Frame, area: Rect, mode: UiMode, help_visible: bool) {
+        if help_visible {
+            // Mostrar ayuda completa
+            let shortcuts = vec![
+                ("F5", "Procesar comando"),
+                ("End", "Terminar sesión de Noctra"),
+                ("F1", "Ocultar ayuda"),
+                ("F8", "Interrumpir procesamiento"),
+                ("Prox. pantal", "Comando siguiente"),
+                ("Pantall. pre", "Comando anterior"),
+                ("Insert", "Insertar espacio"),
+                ("Delete", "Borrar un carácter"),
+                ("Alt+r", "Leer desde archivo"),
+                ("Alt+w", "Grabar en archivo"),
+            ];
 
-        let lines: Vec<Line> = shortcuts
-            .chunks(2)
-            .map(|chunk| {
-                let mut spans = Vec::new();
-                for (key, desc) in chunk {
-                    spans.push(Span::styled(
-                        format!("{:<15}", key),
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    ));
-                    spans.push(Span::raw(":"));
-                    spans.push(Span::styled(
-                        format!("{:<35}", desc),
-                        Style::default().fg(Color::White),
-                    ));
-                }
-                Line::from(spans)
-            })
-            .collect();
+            let lines: Vec<Line> = shortcuts
+                .chunks(2)
+                .map(|chunk| {
+                    let mut spans = Vec::new();
+                    for (key, desc) in chunk {
+                        spans.push(Span::styled(
+                            format!("{:<15}", key),
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ));
+                        spans.push(Span::raw(":"));
+                        spans.push(Span::styled(
+                            format!("{:<35}", desc),
+                            Style::default().fg(Color::White),
+                        ));
+                    }
+                    Line::from(spans)
+                })
+                .collect();
 
-        let shortcuts_widget = Paragraph::new(lines).style(Style::default().fg(Color::White));
+            let shortcuts_widget = Paragraph::new(lines).style(Style::default().fg(Color::White));
+            frame.render_widget(shortcuts_widget, area);
+        } else {
+            // Mostrar status bar simple estilo nvim
+            let mode_text = match mode {
+                UiMode::Command => "-- INSERTAR --",
+                UiMode::Result => "-- RESULTADO --",
+                UiMode::Form => "-- FORMULARIO --",
+                UiMode::Dialog => "-- DIÁLOGO --",
+            };
 
-        frame.render_widget(shortcuts_widget, area);
+            let help_hint = " F1: Ayuda";
+
+            // Calcular padding para centrar el modo y alinear ayuda a la derecha
+            let total_content_len = mode_text.len() + help_hint.len();
+            let padding_len = area.width.saturating_sub(total_content_len as u16);
+            let left_padding = padding_len / 2;
+            let right_padding = padding_len - left_padding;
+
+            let status_line = format!(
+                "{}{}{}{}",
+                " ".repeat(left_padding as usize),
+                mode_text,
+                " ".repeat(right_padding as usize),
+                help_hint
+            );
+
+            let status_bar = Paragraph::new(status_line)
+                .style(
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .alignment(Alignment::Left);
+
+            frame.render_widget(status_bar, area);
+        }
     }
 
     /// Manejar eventos de teclado
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<(), Box<dyn std::error::Error>> {
+        // F1 es una tecla global que funciona en todos los modos
+        if matches!(key.code, KeyCode::F(1)) {
+            self.help_visible = !self.help_visible;
+            return Ok(());
+        }
+
         match self.mode {
             UiMode::Command => self.handle_command_keys(key)?,
             UiMode::Result => self.handle_result_keys(key)?,
