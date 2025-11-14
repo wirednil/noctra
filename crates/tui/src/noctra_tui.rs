@@ -56,6 +56,12 @@ pub struct NoctraTui<'a> {
     /// Resultados SQL (para modo Result)
     current_results: Option<QueryResults>,
 
+    /// Offset horizontal para scroll en tablas de resultados
+    result_scroll_offset_x: usize,
+
+    /// Offset vertical para scroll en tablas de resultados
+    result_scroll_offset_y: usize,
+
     /// Mensaje de diálogo (para modo Dialog)
     dialog_message: Option<String>,
 
@@ -128,6 +134,8 @@ impl<'a> NoctraTui<'a> {
             command_number: 1,
             history_index: None,
             current_results: None,
+            result_scroll_offset_x: 0,
+            result_scroll_offset_y: 0,
             dialog_message: None,
             dialog_options: Vec::new(),
             dialog_selected: 0,
@@ -184,6 +192,8 @@ impl<'a> NoctraTui<'a> {
                     command_number,
                     &mut self.command_editor,
                     current_results.as_ref(),
+                    self.result_scroll_offset_x,
+                    self.result_scroll_offset_y,
                     dialog_message.as_deref(),
                     &dialog_options,
                     dialog_selected,
@@ -228,6 +238,8 @@ impl<'a> NoctraTui<'a> {
         command_number: usize,
         command_editor: &mut TextArea,
         current_results: Option<&QueryResults>,
+        scroll_offset_x: usize,
+        scroll_offset_y: usize,
         dialog_message: Option<&str>,
         dialog_options: &[String],
         dialog_selected: usize,
@@ -254,6 +266,8 @@ impl<'a> NoctraTui<'a> {
             mode,
             command_editor,
             current_results,
+            scroll_offset_x,
+            scroll_offset_y,
             dialog_message,
             dialog_options,
             dialog_selected,
@@ -309,13 +323,15 @@ impl<'a> NoctraTui<'a> {
         mode: UiMode,
         command_editor: &mut TextArea,
         current_results: Option<&QueryResults>,
+        scroll_offset_x: usize,
+        scroll_offset_y: usize,
         dialog_message: Option<&str>,
         dialog_options: &[String],
         dialog_selected: usize,
     ) {
         match mode {
             UiMode::Command => Self::render_command_mode(frame, area, command_editor),
-            UiMode::Result => Self::render_result_mode(frame, area, current_results),
+            UiMode::Result => Self::render_result_mode(frame, area, current_results, scroll_offset_x, scroll_offset_y),
             UiMode::Dialog => Self::render_dialog_mode(
                 frame,
                 area,
@@ -332,8 +348,14 @@ impl<'a> NoctraTui<'a> {
         frame.render_widget(command_editor, area);
     }
 
-    /// Renderizar modo Result (tabla de resultados)
-    fn render_result_mode(frame: &mut Frame, area: Rect, current_results: Option<&QueryResults>) {
+    /// Renderizar modo Result (tabla de resultados) con scroll horizontal y vertical
+    fn render_result_mode(
+        frame: &mut Frame,
+        area: Rect,
+        current_results: Option<&QueryResults>,
+        scroll_offset_x: usize,
+        scroll_offset_y: usize,
+    ) {
         if let Some(results) = current_results {
             // Calcular ancho de columnas basado en contenido
             let mut col_widths: Vec<usize> = results.columns.iter().map(|col| col.len()).collect();
@@ -347,46 +369,76 @@ impl<'a> NoctraTui<'a> {
                 }
             }
 
-            // Calcular ancho total de la tabla
-            // suma de anchos de columnas + padding (2 por columna) + separadores (1 por columna-1) + bordes (2)
-            let table_width = col_widths.iter().sum::<usize>()
-                + (col_widths.len() * 2)  // padding (1 espacio cada lado)
-                + (col_widths.len().saturating_sub(1))  // separadores entre columnas
-                + 2;  // bordes izquierdo y derecho
+            // Espacio disponible para la tabla (reservar espacio para indicadores de scroll)
+            let available_width = area.width.saturating_sub(4); // bordes + indicadores
+            let available_height = area.height.saturating_sub(5); // header + bordes + status + indicadores
 
-            // Calcular altura de la tabla
-            // header (1) + filas + bordes (2) + status (1)
-            let table_height = results.rows.len() + 4;
+            // Determinar qué columnas son visibles basado en el scroll horizontal
+            let mut visible_columns = Vec::new();
+            let mut visible_widths = Vec::new();
+            let mut current_width = 0u16;
+            let start_col = scroll_offset_x.min(results.columns.len().saturating_sub(1));
 
-            // Crear área centrada para la tabla
-            let table_width = (table_width as u16).min(area.width);
-            let table_height = (table_height as u16).min(area.height);
+            for i in start_col..results.columns.len() {
+                let col_width = (col_widths[i] + 2).max(4) as u16; // padding
+                if current_width + col_width + 1 <= available_width {
+                    visible_columns.push(i);
+                    visible_widths.push(col_width);
+                    current_width += col_width + 1; // +1 para separador
+                } else {
+                    break;
+                }
+            }
 
+            // Si no hay columnas visibles, mostrar al menos una
+            if visible_columns.is_empty() && !results.columns.is_empty() {
+                visible_columns.push(start_col);
+                visible_widths.push((col_widths[start_col] + 2).max(4) as u16);
+            }
+
+            // Determinar qué filas son visibles basado en el scroll vertical
+            let start_row = scroll_offset_y.min(results.rows.len().saturating_sub(1));
+            let end_row = (start_row + available_height as usize).min(results.rows.len());
+            let visible_rows = &results.rows[start_row..end_row];
+
+            // Calcular tamaño de la tabla visible
+            let table_width = visible_widths.iter().sum::<u16>()
+                + visible_columns.len().saturating_sub(1) as u16 // separadores
+                + 2; // bordes
+
+            let table_height = (visible_rows.len() + 3).min(area.height as usize) as u16; // +3 para header y bordes
+
+            // Centrar la tabla
             let table_area = Rect {
                 x: area.x + (area.width.saturating_sub(table_width)) / 2,
-                y: area.y + (area.height.saturating_sub(table_height)) / 2,
+                y: area.y + (area.height.saturating_sub(table_height + 2)) / 2, // +2 para status e indicadores
                 width: table_width,
                 height: table_height,
             };
 
-            // Crear tabla con bordes ASCII
-            let header_cells = results.columns.iter().map(|col| {
-                Cell::from(col.as_str()).style(Style::default().add_modifier(Modifier::BOLD))
+            // Crear header con columnas visibles
+            let header_cells = visible_columns.iter().map(|&i| {
+                Cell::from(results.columns[i].as_str())
+                    .style(Style::default().add_modifier(Modifier::BOLD))
             });
 
             let header = Row::new(header_cells)
                 .style(Style::default().fg(Color::Yellow))
                 .height(1);
 
-            let rows = results.rows.iter().map(|row| {
-                let cells = row.iter().map(|cell| Cell::from(cell.as_str()));
+            // Crear filas visibles con solo las columnas visibles
+            let rows = visible_rows.iter().map(|row| {
+                let cells = visible_columns.iter().map(|&i| {
+                    let cell_text = row.get(i).map(|s| s.as_str()).unwrap_or("");
+                    Cell::from(cell_text)
+                });
                 Row::new(cells).height(1)
             });
 
-            // Agregar padding (2 espacios por lado) y convertir a Constraint
-            let col_constraints: Vec<Constraint> = col_widths
+            // Constraints para columnas visibles
+            let col_constraints: Vec<Constraint> = visible_widths
                 .iter()
-                .map(|&width| Constraint::Length((width + 2).max(4) as u16))
+                .map(|&width| Constraint::Length(width))
                 .collect();
 
             let table = Table::new(rows, col_constraints)
@@ -400,7 +452,7 @@ impl<'a> NoctraTui<'a> {
 
             frame.render_widget(table, table_area);
 
-            // Mostrar mensaje de estado debajo de la tabla centrada
+            // Mostrar indicadores de scroll y estado
             let status_area = Rect {
                 x: table_area.x,
                 y: table_area.y + table_area.height,
@@ -408,10 +460,54 @@ impl<'a> NoctraTui<'a> {
                 height: 1,
             };
 
-            let status =
-                Paragraph::new(results.status.as_str()).style(Style::default().fg(Color::Gray));
+            // Indicadores de scroll
+            let total_cols = results.columns.len();
+            let total_rows = results.rows.len();
+            let has_more_left = scroll_offset_x > 0;
+            let has_more_right = scroll_offset_x + visible_columns.len() < total_cols;
+            let has_more_up = scroll_offset_y > 0;
+            let has_more_down = end_row < total_rows;
+
+            let scroll_indicator = format!(
+                "{}Col {}-{}/{} | Fil {}-{}/{}{} | {}",
+                if has_more_left { "← " } else { "" },
+                scroll_offset_x + 1,
+                scroll_offset_x + visible_columns.len(),
+                total_cols,
+                start_row + 1,
+                end_row,
+                total_rows,
+                if has_more_right { " →" } else { "" },
+                results.status
+            );
+
+            let status = Paragraph::new(scroll_indicator)
+                .style(Style::default().fg(Color::Gray));
 
             frame.render_widget(status, status_area);
+
+            // Indicadores visuales adicionales
+            if has_more_up || has_more_down {
+                let arrow_area = Rect {
+                    x: table_area.x + table_area.width,
+                    y: table_area.y,
+                    width: 1,
+                    height: table_area.height,
+                };
+
+                let arrows = if has_more_up && has_more_down {
+                    "↕"
+                } else if has_more_up {
+                    "↑"
+                } else {
+                    "↓"
+                };
+
+                let arrow_widget = Paragraph::new(arrows)
+                    .style(Style::default().fg(Color::Cyan));
+
+                frame.render_widget(arrow_widget, arrow_area);
+            }
         } else {
             let empty = Paragraph::new("No hay resultados para mostrar")
                 .style(Style::default().fg(Color::Gray))
@@ -599,11 +695,86 @@ impl<'a> NoctraTui<'a> {
     fn handle_result_keys(&mut self, key: KeyEvent) -> Result<(), Box<dyn std::error::Error>> {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => {
-                // Volver a modo Command
+                // Volver a modo Command y resetear scroll
                 self.mode = UiMode::Command;
+                self.result_scroll_offset_x = 0;
+                self.result_scroll_offset_y = 0;
             }
             KeyCode::End => {
                 self.show_exit_dialog();
+            }
+            KeyCode::Left => {
+                // Scroll izquierda
+                self.result_scroll_offset_x = self.result_scroll_offset_x.saturating_sub(1);
+            }
+            KeyCode::Right => {
+                // Scroll derecha
+                if let Some(results) = &self.current_results {
+                    if self.result_scroll_offset_x < results.columns.len().saturating_sub(1) {
+                        self.result_scroll_offset_x += 1;
+                    }
+                }
+            }
+            KeyCode::Up => {
+                // Scroll arriba
+                self.result_scroll_offset_y = self.result_scroll_offset_y.saturating_sub(1);
+            }
+            KeyCode::Down => {
+                // Scroll abajo
+                if let Some(results) = &self.current_results {
+                    if self.result_scroll_offset_y < results.rows.len().saturating_sub(1) {
+                        self.result_scroll_offset_y += 1;
+                    }
+                }
+            }
+            KeyCode::PageDown => {
+                // Scroll página abajo (10 filas)
+                if let Some(results) = &self.current_results {
+                    self.result_scroll_offset_y = (self.result_scroll_offset_y + 10)
+                        .min(results.rows.len().saturating_sub(1));
+                }
+            }
+            KeyCode::PageUp => {
+                // Scroll página arriba (10 filas)
+                self.result_scroll_offset_y = self.result_scroll_offset_y.saturating_sub(10);
+            }
+            KeyCode::Home => {
+                // Ir al inicio (primera columna)
+                self.result_scroll_offset_x = 0;
+            }
+            KeyCode::Char('h') => {
+                // Vim-style: scroll izquierda
+                self.result_scroll_offset_x = self.result_scroll_offset_x.saturating_sub(1);
+            }
+            KeyCode::Char('l') => {
+                // Vim-style: scroll derecha
+                if let Some(results) = &self.current_results {
+                    if self.result_scroll_offset_x < results.columns.len().saturating_sub(1) {
+                        self.result_scroll_offset_x += 1;
+                    }
+                }
+            }
+            KeyCode::Char('k') => {
+                // Vim-style: scroll arriba
+                self.result_scroll_offset_y = self.result_scroll_offset_y.saturating_sub(1);
+            }
+            KeyCode::Char('j') => {
+                // Vim-style: scroll abajo
+                if let Some(results) = &self.current_results {
+                    if self.result_scroll_offset_y < results.rows.len().saturating_sub(1) {
+                        self.result_scroll_offset_y += 1;
+                    }
+                }
+            }
+            KeyCode::Char('g') => {
+                // Ir al inicio de la tabla (arriba)
+                self.result_scroll_offset_y = 0;
+            }
+            KeyCode::Char('G') => {
+                // Ir al final de la tabla (abajo)
+                if let Some(results) = &self.current_results {
+                    self.result_scroll_offset_y = results.rows.len().saturating_sub(1);
+                }
             }
             _ => {}
         }
@@ -803,6 +974,10 @@ impl<'a> NoctraTui<'a> {
                 // Convertir ResultSet a QueryResults
                 self.current_results = Some(self.convert_result_set(result_set, sql));
 
+                // Resetear scroll para nuevos resultados
+                self.result_scroll_offset_x = 0;
+                self.result_scroll_offset_y = 0;
+
                 // Cambiar a modo Result
                 self.mode = UiMode::Result;
                 Ok(())
@@ -925,6 +1100,8 @@ impl<'a> NoctraTui<'a> {
 
         // Mostrar como resultado de tabla
         self.current_results = Some(self.convert_result_set(result_set, "SHOW SOURCES"));
+        self.result_scroll_offset_x = 0;
+        self.result_scroll_offset_y = 0;
         self.mode = UiMode::Result;
 
         Ok(())
@@ -987,6 +1164,8 @@ impl<'a> NoctraTui<'a> {
 
         // Mostrar como resultado de tabla
         self.current_results = Some(self.convert_result_set(result_set, "SHOW TABLES"));
+        self.result_scroll_offset_x = 0;
+        self.result_scroll_offset_y = 0;
         self.mode = UiMode::Result;
 
         Ok(())
@@ -1023,6 +1202,8 @@ impl<'a> NoctraTui<'a> {
 
         // Mostrar como resultado de tabla
         self.current_results = Some(self.convert_result_set(result_set, "SHOW VARS"));
+        self.result_scroll_offset_x = 0;
+        self.result_scroll_offset_y = 0;
         self.mode = UiMode::Result;
 
         Ok(())
@@ -1063,6 +1244,8 @@ impl<'a> NoctraTui<'a> {
 
                             // Mostrar como resultado de tabla
                             self.current_results = Some(self.convert_result_set(result_set, &format!("DESCRIBE {}.{}", source_name, table)));
+                            self.result_scroll_offset_x = 0;
+                            self.result_scroll_offset_y = 0;
                             self.mode = UiMode::Result;
 
                             return Ok(());
