@@ -4,7 +4,7 @@
 //! Incluye layout fijo, modos de trabajo y gestión de comandos SQL/RQL.
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent},
+    event::{self, Event, KeyCode, KeyEvent, EnableBracketedPaste, DisableBracketedPaste},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -100,7 +100,7 @@ impl<'a> NoctraTui<'a> {
         // Configurar terminal
         enable_raw_mode()?;
         let mut stdout = stdout();
-        execute!(stdout, EnterAlternateScreen)?;
+        execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
 
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
@@ -1611,7 +1611,11 @@ impl<'a> NoctraTui<'a> {
     /// Limpiar y restaurar terminal
     fn cleanup(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         disable_raw_mode()?;
-        execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
+        execute!(
+            self.terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableBracketedPaste
+        )?;
         self.terminal.show_cursor()?;
         Ok(())
     }
