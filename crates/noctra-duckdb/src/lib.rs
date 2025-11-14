@@ -25,6 +25,7 @@
 
 pub mod source;
 pub mod engine;
+pub mod query_engine;
 pub mod extensions;
 pub mod error;
 pub mod config;
@@ -32,6 +33,7 @@ pub mod attachment;
 
 pub use source::DuckDBSource;
 pub use engine::DuckDBEngine;
+pub use query_engine::{QueryEngine, RoutingStrategy};
 pub use error::{DuckDBError, Result};
 pub use config::DuckDBConfig;
 pub use attachment::{AttachmentConfig, AttachmentRegistry};
