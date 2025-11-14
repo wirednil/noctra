@@ -210,9 +210,16 @@ impl DuckDBSource {
                     // Convert blob to string representation
                     Value::Text("[BLOB]".to_string())
                 }
-                duckdb::types::ValueRef::Date32(_) => {
-                    // Convert date to string
-                    row.get::<_, String>(idx).map(Value::Text).unwrap_or(Value::Null)
+                duckdb::types::ValueRef::Date32(days) => {
+                    // Convert days since epoch to date string (YYYY-MM-DD)
+                    // DuckDB epoch is 1970-01-01
+                    use chrono::NaiveDate;
+                    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+                    if let Some(date) = epoch.checked_add_signed(chrono::Duration::days(days as i64)) {
+                        Value::Text(date.format("%Y-%m-%d").to_string())
+                    } else {
+                        Value::Null
+                    }
                 }
                 duckdb::types::ValueRef::Time64(_, _) => {
                     // Convert time to string
