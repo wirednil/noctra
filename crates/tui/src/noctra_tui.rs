@@ -152,6 +152,20 @@ impl<'a> NoctraTui<'a> {
                 .map(|source| {
                     let source_name = source.name().to_string();
 
+                    // Si es DuckDB, intentar obtener la lista de tablas registradas
+                    if source_name == "duckdb" {
+                        // Try to downcast to DuckDBSource to get registered files
+                        if let Ok(schema) = source.schema() {
+                            let table_names: Vec<String> = schema
+                                .iter()
+                                .map(|table| table.name.clone())
+                                .collect();
+                            if !table_names.is_empty() {
+                                return table_names.join(", ");
+                            }
+                        }
+                    }
+
                     // Intentar extraer nombre de tabla del último resultado
                     if let Some(results) = &current_results {
                         // Extraer tabla del comando SQL (ej: "SELECT * FROM clientes")
@@ -179,8 +193,24 @@ impl<'a> NoctraTui<'a> {
 
             // Procesar eventos
             if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    self.handle_key_event(key)?;
+                match event::read()? {
+                    Event::Key(key) => {
+                        self.handle_key_event(key)?;
+                    }
+                    Event::Paste(data) => {
+                        // Handle pasted text - insert it with proper line breaks
+                        if matches!(self.mode, UiMode::Command) {
+                            let lines: Vec<&str> = data.lines().collect();
+                            for (idx, line) in lines.iter().enumerate() {
+                                self.command_editor.insert_str(line);
+                                // Add newline after each line except the last one
+                                if idx < lines.len() - 1 {
+                                    self.command_editor.insert_newline();
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
