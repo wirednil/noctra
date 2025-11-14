@@ -13,6 +13,8 @@
 //!
 //! ```rust,no_run
 //! use noctra_duckdb::{DuckDBSource, QueryEngine, RoutingStrategy};
+//! use noctra_core::datasource::DataSource;
+//! use noctra_core::types::Parameters;
 //!
 //! // Create DuckDB backend
 //! let source = DuckDBSource::new_in_memory()?;
@@ -24,7 +26,7 @@
 //! engine.register_file("sales.csv", "sales")?;
 //!
 //! // Query the file
-//! let result = engine.query("SELECT * FROM sales WHERE amount > 100")?;
+//! let result = engine.query("SELECT * FROM sales WHERE amount > 100", &Parameters::new())?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
