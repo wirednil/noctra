@@ -335,6 +335,40 @@ impl<'a> NoctraTui<'a> {
     /// Renderizar modo Result (tabla de resultados)
     fn render_result_mode(frame: &mut Frame, area: Rect, current_results: Option<&QueryResults>) {
         if let Some(results) = current_results {
+            // Calcular ancho de columnas basado en contenido
+            let mut col_widths: Vec<usize> = results.columns.iter().map(|col| col.len()).collect();
+
+            // Actualizar anchos considerando valores de todas las filas
+            for row in &results.rows {
+                for (i, cell) in row.iter().enumerate() {
+                    if i < col_widths.len() {
+                        col_widths[i] = col_widths[i].max(cell.len());
+                    }
+                }
+            }
+
+            // Calcular ancho total de la tabla
+            // suma de anchos de columnas + padding (2 por columna) + separadores (1 por columna-1) + bordes (2)
+            let table_width = col_widths.iter().sum::<usize>()
+                + (col_widths.len() * 2)  // padding (1 espacio cada lado)
+                + (col_widths.len().saturating_sub(1))  // separadores entre columnas
+                + 2;  // bordes izquierdo y derecho
+
+            // Calcular altura de la tabla
+            // header (1) + filas + bordes (2) + status (1)
+            let table_height = results.rows.len() + 4;
+
+            // Crear área centrada para la tabla
+            let table_width = (table_width as u16).min(area.width);
+            let table_height = (table_height as u16).min(area.height);
+
+            let table_area = Rect {
+                x: area.x + (area.width.saturating_sub(table_width)) / 2,
+                y: area.y + (area.height.saturating_sub(table_height)) / 2,
+                width: table_width,
+                height: table_height,
+            };
+
             // Crear tabla con bordes ASCII
             let header_cells = results.columns.iter().map(|col| {
                 Cell::from(col.as_str()).style(Style::default().add_modifier(Modifier::BOLD))
@@ -348,18 +382,6 @@ impl<'a> NoctraTui<'a> {
                 let cells = row.iter().map(|cell| Cell::from(cell.as_str()));
                 Row::new(cells).height(1)
             });
-
-            // Calcular ancho de columnas basado en contenido
-            let mut col_widths: Vec<usize> = results.columns.iter().map(|col| col.len()).collect();
-
-            // Actualizar anchos considerando valores de todas las filas
-            for row in &results.rows {
-                for (i, cell) in row.iter().enumerate() {
-                    if i < col_widths.len() {
-                        col_widths[i] = col_widths[i].max(cell.len());
-                    }
-                }
-            }
 
             // Agregar padding (2 espacios por lado) y convertir a Constraint
             let col_constraints: Vec<Constraint> = col_widths
@@ -376,13 +398,14 @@ impl<'a> NoctraTui<'a> {
                 )
                 .style(Style::default().fg(Color::White));
 
-            frame.render_widget(table, area);
+            frame.render_widget(table, table_area);
 
-            // Mostrar mensaje de estado debajo
+            // Mostrar mensaje de estado debajo de la tabla centrada
             let status_area = Rect {
-                y: area.y + area.height.saturating_sub(2),
+                x: table_area.x,
+                y: table_area.y + table_area.height,
+                width: table_area.width,
                 height: 1,
-                ..area
             };
 
             let status =
