@@ -320,6 +320,10 @@ impl DataSource for DuckDBSource {
     fn name(&self) -> &str {
         &self.name
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 #[cfg(test)]

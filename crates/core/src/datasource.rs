@@ -38,6 +38,9 @@ pub trait DataSource: Send + Sync + Debug {
     fn close(&mut self) -> Result<()> {
         Ok(())
     }
+
+    /// Downcast to Any for type-specific operations (mutable)
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
 /// Type of data source

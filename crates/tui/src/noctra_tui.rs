@@ -755,33 +755,62 @@ impl<'a> NoctraTui<'a> {
     fn handle_use_source(&mut self, path: &str, alias: Option<&str>, _options: &HashMap<String, String>) -> Result<(), Box<dyn std::error::Error>> {
         // Detectar tipo de fuente por extensión
         if path.ends_with(".csv") || path.ends_with(".json") || path.ends_with(".parquet") {
-            // Crear fuente DuckDB (reemplaza CsvDataSource)
-            let source_name = alias.unwrap_or(path);
+            let table_name = alias.unwrap_or(path);
 
             #[cfg(debug_assertions)]
-            eprintln!("[DEBUG TUI] Loading DuckDB source: {} as {}", path, source_name);
+            eprintln!("[DEBUG TUI] Loading file into DuckDB: {} as {}", path, table_name);
 
-            // Usar DuckDBSource desde noctra-duckdb
-            let mut duckdb_source = noctra_duckdb::DuckDBSource::new_in_memory()
-                .map_err(|e| NoctraError::Internal(format!("Error creating DuckDB source: {}", e)))?;
+            // Buscar si ya existe una fuente DuckDB registrada
+            let registry = self.executor.source_registry_mut();
+            let duckdb_source_exists = registry.list_sources()
+                .iter()
+                .any(|(name, _)| name == "duckdb");
 
-            duckdb_source.register_file(path, &source_name)
-                .map_err(|e| NoctraError::Internal(format!("Error registering file: {}", e)))?;
+            if duckdb_source_exists {
+                // Agregar archivo a la instancia DuckDB existente
+                #[cfg(debug_assertions)]
+                eprintln!("[DEBUG TUI] Using existing DuckDB source");
 
-            #[cfg(debug_assertions)]
-            eprintln!("[DEBUG TUI] DuckDB source created successfully");
+                if let Some(source) = registry.get_mut("duckdb") {
+                    // Downcast a DuckDBSource
+                    let duckdb_source = source
+                        .as_any_mut()
+                        .downcast_mut::<noctra_duckdb::DuckDBSource>()
+                        .ok_or_else(|| NoctraError::Internal("Source 'duckdb' is not a DuckDBSource".to_string()))?;
 
-            // Registrar fuente
-            self.executor.source_registry_mut()
-                .register(source_name.to_string(), Box::new(duckdb_source))
-                .map_err(|e| NoctraError::Internal(format!("Error registering source: {}", e)))?;
+                    duckdb_source.register_file(path, table_name)
+                        .map_err(|e| NoctraError::Internal(format!("Error registering file: {}", e)))?;
 
-            #[cfg(debug_assertions)]
-            {
-                eprintln!("[DEBUG TUI] DuckDB source registered");
-                eprintln!("[DEBUG TUI] Active source: {:?}",
-                    self.executor.source_registry().active().map(|s| s.name()));
+                    #[cfg(debug_assertions)]
+                    eprintln!("[DEBUG TUI] File registered in existing DuckDB instance");
+                } else {
+                    return Err(Box::new(NoctraError::Internal("DuckDB source not found".to_string())));
+                }
+            } else {
+                // Crear nueva instancia DuckDB y registrarla
+                #[cfg(debug_assertions)]
+                eprintln!("[DEBUG TUI] Creating new DuckDB source");
+
+                let mut duckdb_source = noctra_duckdb::DuckDBSource::new_in_memory()
+                    .map_err(|e| NoctraError::Internal(format!("Error creating DuckDB source: {}", e)))?;
+
+                duckdb_source.register_file(path, table_name)
+                    .map_err(|e| NoctraError::Internal(format!("Error registering file: {}", e)))?;
+
+                #[cfg(debug_assertions)]
+                eprintln!("[DEBUG TUI] DuckDB source created successfully");
+
+                // Registrar fuente con nombre fijo "duckdb"
+                registry.register("duckdb".to_string(), Box::new(duckdb_source))
+                    .map_err(|e| NoctraError::Internal(format!("Error registering source: {}", e)))?;
+
+                #[cfg(debug_assertions)]
+                eprintln!("[DEBUG TUI] DuckDB source registered as 'duckdb'");
             }
+
+            #[cfg(debug_assertions)]
+            eprintln!("[DEBUG TUI] Active source: {:?}",
+                self.executor.source_registry().active().map(|s| s.name()));
 
             // Success - no dialog in release mode
         } else {
