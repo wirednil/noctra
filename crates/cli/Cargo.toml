@@ -22,6 +22,7 @@ clap_complete = "4.0"
 # REPL editing
 rustyline = "12.0"
 rustyline-derive = "0.5"
+dirs = "5.0"
 
 # Async runtime
 tokio = { workspace = true, features = ["full"] }

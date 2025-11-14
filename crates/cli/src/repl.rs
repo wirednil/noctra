@@ -5,6 +5,8 @@ use crate::config::CliConfig;
 use crate::output::format_result_set;
 use noctra_core::{Executor, NoctraError, RqlQuery, Session, SqliteBackend};
 use noctra_parser::{RqlProcessor, RqlStatement};
+use rustyline::error::ReadlineError;
+use rustyline::DefaultEditor;
 use std::collections::HashMap;
 use std::io::{self, Write};
 use std::sync::Arc;
@@ -87,20 +89,60 @@ impl Repl {
     pub async fn run(&mut self) -> Result<()> {
         println!("Noctra REPL iniciado - Escribe 'help' para ayuda");
 
+        // Crear editor rustyline
+        let mut rl = DefaultEditor::new()
+            .map_err(|e| NoctraError::Internal(format!("Failed to create editor: {}", e)))?;
+
+        // Cargar historial si existe
+        let history_path = dirs::home_dir()
+            .map(|mut p| {
+                p.push(".noctra_history");
+                p
+            });
+
+        if let Some(ref path) = history_path {
+            let _ = rl.load_history(path); // Ignorar error si no existe
+        }
+
         loop {
             // Mostrar prompt
             let prompt = self.get_prompt();
 
-            // Leer input
-            let input = read_input(&prompt)?;
+            // Leer input usando rustyline
+            match rl.readline(&prompt) {
+                Ok(line) => {
+                    // Agregar al historial de rustyline
+                    let _ = rl.add_history_entry(line.as_str());
 
-            // Procesar input
-            if self.process_input(&input)? {
-                break; // Salir del REPL
+                    // Procesar input
+                    if self.process_input(&line)? {
+                        break; // Salir del REPL
+                    }
+                }
+                Err(ReadlineError::Interrupted) => {
+                    // Ctrl+C - cancelar línea actual
+                    println!("^C");
+                    self.multiline_buffer.clear();
+                    self.handler.state = ReplState::Ready;
+                    continue;
+                }
+                Err(ReadlineError::Eof) => {
+                    // Ctrl+D - salir
+                    break;
+                }
+                Err(err) => {
+                    println!("Error: {:?}", err);
+                    break;
+                }
             }
         }
 
-        println!("👋 ¡Hasta luego!");
+        // Guardar historial
+        if let Some(ref path) = history_path {
+            let _ = rl.save_history(path); // Ignorar error si falla
+        }
+
+        println!("¡Hasta luego!");
         Ok(())
     }
 
@@ -1060,21 +1102,6 @@ impl ReplHandler {
             line_count: 0,
         })
     }
-}
-
-/// Leer input con prompt
-fn read_input(prompt: &str) -> Result<String> {
-    print!("{}", prompt);
-    io::stdout()
-        .flush()
-        .map_err(|e| NoctraError::Io(e.to_string()))?;
-
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .map_err(|e| NoctraError::Io(e.to_string()))?;
-
-    Ok(input.trim().to_string())
 }
 
 /// Resultado de comando
