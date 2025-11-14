@@ -68,7 +68,19 @@ impl fmt::Display for Value {
         match self {
             Self::Null => write!(f, "NULL"),
             Self::Integer(v) => write!(f, "{}", v),
-            Self::Float(v) => write!(f, "{}", v),
+            Self::Float(v) => {
+                // Check if the float is actually a whole number
+                if v.fract() == 0.0 && v.abs() < 1e10 {
+                    // For whole numbers, show with .0
+                    write!(f, "{:.1}", v)
+                } else {
+                    // For decimals, show with appropriate precision
+                    // Remove unnecessary trailing zeros
+                    let formatted = format!("{:.10}", v);
+                    let trimmed = formatted.trim_end_matches('0').trim_end_matches('.');
+                    write!(f, "{}", trimmed)
+                }
+            }
             Self::Text(v) => write!(f, "{}", v),
             Self::Boolean(v) => write!(f, "{}", v),
             Self::Date(v) | Self::DateTime(v) => write!(f, "{}", v),

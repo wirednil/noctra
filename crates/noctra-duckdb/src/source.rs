@@ -178,33 +178,53 @@ impl DuckDBSource {
         let mut values = Vec::new();
 
         for idx in 0..columns.len() {
-            // Try different types in order of preference
-            // First try as integer
-            if let Ok(val) = row.get::<_, Option<i64>>(idx) {
-                values.push(val.map(Value::Integer).unwrap_or(Value::Null));
-                continue;
-            }
+            // Use ValueRef to determine the actual type of the value
+            let value_ref = row.get_ref(idx)?;
 
-            // Then try as float
-            if let Ok(val) = row.get::<_, Option<f64>>(idx) {
-                values.push(val.map(Value::Float).unwrap_or(Value::Null));
-                continue;
-            }
+            let value = match value_ref {
+                duckdb::types::ValueRef::Null => Value::Null,
+                duckdb::types::ValueRef::Boolean(b) => Value::Boolean(b),
+                duckdb::types::ValueRef::TinyInt(i) => Value::Integer(i as i64),
+                duckdb::types::ValueRef::SmallInt(i) => Value::Integer(i as i64),
+                duckdb::types::ValueRef::Int(i) => Value::Integer(i as i64),
+                duckdb::types::ValueRef::BigInt(i) => Value::Integer(i),
+                duckdb::types::ValueRef::HugeInt(i) => Value::Integer(i as i64),
+                duckdb::types::ValueRef::UTinyInt(i) => Value::Integer(i as i64),
+                duckdb::types::ValueRef::USmallInt(i) => Value::Integer(i as i64),
+                duckdb::types::ValueRef::UInt(i) => Value::Integer(i as i64),
+                duckdb::types::ValueRef::UBigInt(i) => Value::Integer(i as i64),
+                duckdb::types::ValueRef::Float(f) => Value::Float(f as f64),
+                duckdb::types::ValueRef::Double(f) => Value::Float(f),
+                duckdb::types::ValueRef::Decimal(_) => {
+                    // Convert decimal to float
+                    row.get::<_, f64>(idx).map(Value::Float).unwrap_or(Value::Null)
+                }
+                duckdb::types::ValueRef::Timestamp(_, _) => {
+                    // Convert timestamp to string
+                    row.get::<_, String>(idx).map(Value::Text).unwrap_or(Value::Null)
+                }
+                duckdb::types::ValueRef::Text(s) => {
+                    Value::Text(String::from_utf8_lossy(s).to_string())
+                }
+                duckdb::types::ValueRef::Blob(_) => {
+                    // Convert blob to string representation
+                    Value::Text("[BLOB]".to_string())
+                }
+                duckdb::types::ValueRef::Date32(_) => {
+                    // Convert date to string
+                    row.get::<_, String>(idx).map(Value::Text).unwrap_or(Value::Null)
+                }
+                duckdb::types::ValueRef::Time64(_, _) => {
+                    // Convert time to string
+                    row.get::<_, String>(idx).map(Value::Text).unwrap_or(Value::Null)
+                }
+                _ => {
+                    // For any other type, try to convert to string
+                    row.get::<_, String>(idx).map(Value::Text).unwrap_or(Value::Null)
+                }
+            };
 
-            // Then try as boolean
-            if let Ok(val) = row.get::<_, Option<bool>>(idx) {
-                values.push(val.map(Value::Boolean).unwrap_or(Value::Null));
-                continue;
-            }
-
-            // Finally try as string
-            if let Ok(val) = row.get::<_, Option<String>>(idx) {
-                values.push(val.map(Value::Text).unwrap_or(Value::Null));
-                continue;
-            }
-
-            // If all else fails, use Null
-            values.push(Value::Null);
+            values.push(value);
         }
 
         Ok(NoctraRow { values })
