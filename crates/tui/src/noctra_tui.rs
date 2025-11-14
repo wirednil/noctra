@@ -819,6 +819,9 @@ impl<'a> NoctraTui<'a> {
 
     /// Manejar teclas en modo Result
     fn handle_result_keys(&mut self, key: KeyEvent) -> Result<(), Box<dyn std::error::Error>> {
+        // Calcular límites de scroll basados en el área visible
+        let (max_offset_x, max_offset_y) = self.calculate_max_scroll_offsets();
+
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => {
                 // Volver a modo Command y resetear scroll
@@ -834,11 +837,9 @@ impl<'a> NoctraTui<'a> {
                 self.result_scroll_offset_x = self.result_scroll_offset_x.saturating_sub(1);
             }
             KeyCode::Right => {
-                // Scroll derecha
-                if let Some(results) = &self.current_results {
-                    if self.result_scroll_offset_x < results.columns.len().saturating_sub(1) {
-                        self.result_scroll_offset_x += 1;
-                    }
+                // Scroll derecha (solo si no hemos alcanzado el límite)
+                if self.result_scroll_offset_x < max_offset_x {
+                    self.result_scroll_offset_x += 1;
                 }
             }
             KeyCode::Up => {
@@ -846,19 +847,14 @@ impl<'a> NoctraTui<'a> {
                 self.result_scroll_offset_y = self.result_scroll_offset_y.saturating_sub(1);
             }
             KeyCode::Down => {
-                // Scroll abajo
-                if let Some(results) = &self.current_results {
-                    if self.result_scroll_offset_y < results.rows.len().saturating_sub(1) {
-                        self.result_scroll_offset_y += 1;
-                    }
+                // Scroll abajo (solo si no hemos alcanzado el límite)
+                if self.result_scroll_offset_y < max_offset_y {
+                    self.result_scroll_offset_y += 1;
                 }
             }
             KeyCode::PageDown => {
                 // Scroll página abajo (10 filas)
-                if let Some(results) = &self.current_results {
-                    self.result_scroll_offset_y = (self.result_scroll_offset_y + 10)
-                        .min(results.rows.len().saturating_sub(1));
-                }
+                self.result_scroll_offset_y = (self.result_scroll_offset_y + 10).min(max_offset_y);
             }
             KeyCode::PageUp => {
                 // Scroll página arriba (10 filas)
@@ -874,10 +870,8 @@ impl<'a> NoctraTui<'a> {
             }
             KeyCode::Char('l') => {
                 // Vim-style: scroll derecha
-                if let Some(results) = &self.current_results {
-                    if self.result_scroll_offset_x < results.columns.len().saturating_sub(1) {
-                        self.result_scroll_offset_x += 1;
-                    }
+                if self.result_scroll_offset_x < max_offset_x {
+                    self.result_scroll_offset_x += 1;
                 }
             }
             KeyCode::Char('k') => {
@@ -886,10 +880,8 @@ impl<'a> NoctraTui<'a> {
             }
             KeyCode::Char('j') => {
                 // Vim-style: scroll abajo
-                if let Some(results) = &self.current_results {
-                    if self.result_scroll_offset_y < results.rows.len().saturating_sub(1) {
-                        self.result_scroll_offset_y += 1;
-                    }
+                if self.result_scroll_offset_y < max_offset_y {
+                    self.result_scroll_offset_y += 1;
                 }
             }
             KeyCode::Char('g') => {
@@ -898,9 +890,7 @@ impl<'a> NoctraTui<'a> {
             }
             KeyCode::Char('G') => {
                 // Ir al final de la tabla (abajo)
-                if let Some(results) = &self.current_results {
-                    self.result_scroll_offset_y = results.rows.len().saturating_sub(1);
-                }
+                self.result_scroll_offset_y = max_offset_y;
             }
             KeyCode::Char('0') => {
                 // Vim-style: ir a primera columna
@@ -908,16 +898,11 @@ impl<'a> NoctraTui<'a> {
             }
             KeyCode::Char('$') => {
                 // Vim-style: ir a última columna
-                if let Some(results) = &self.current_results {
-                    self.result_scroll_offset_x = results.columns.len().saturating_sub(1);
-                }
+                self.result_scroll_offset_x = max_offset_x;
             }
             KeyCode::Char('w') => {
                 // Vim-style: saltar 5 columnas adelante (word-forward)
-                if let Some(results) = &self.current_results {
-                    self.result_scroll_offset_x = (self.result_scroll_offset_x + 5)
-                        .min(results.columns.len().saturating_sub(1));
-                }
+                self.result_scroll_offset_x = (self.result_scroll_offset_x + 5).min(max_offset_x);
             }
             KeyCode::Char('b') => {
                 // Vim-style: saltar 5 columnas atrás (word-backward)
@@ -935,15 +920,88 @@ impl<'a> NoctraTui<'a> {
                 }
                 KeyCode::Right => {
                     // Ctrl+Right: ir a última columna (como '$')
-                    if let Some(results) = &self.current_results {
-                        self.result_scroll_offset_x = results.columns.len().saturating_sub(1);
-                    }
+                    self.result_scroll_offset_x = max_offset_x;
                 }
                 _ => {}
             }
         }
 
         Ok(())
+    }
+
+    /// Calcular los offsets máximos de scroll basados en cuántos elementos caben en pantalla
+    fn calculate_max_scroll_offsets(&self) -> (usize, usize) {
+        let results = match &self.current_results {
+            Some(r) => r,
+            None => return (0, 0),
+        };
+
+        // Obtener tamaño del terminal
+        let term_size = match self.terminal.size() {
+            Ok(size) => size,
+            Err(_) => return (0, 0),
+        };
+
+        // Calcular cuántas filas caben en pantalla
+        // Restar: header (1) + separator (1) + footer (1) + borders (2) + status bar (1) = 6
+        let available_height = term_size.height.saturating_sub(6);
+        let visible_row_count = available_height.saturating_sub(3) as usize; // -3 para borders y header de tabla
+
+        // El offset máximo es cuando la última fila está visible
+        // Si tenemos 50 filas y caben 15, el offset máximo es 50 - 15 = 35
+        let max_offset_y = if results.rows.len() > visible_row_count {
+            results.rows.len() - visible_row_count
+        } else {
+            0 // Si todas las filas caben, no hay necesidad de scroll
+        };
+
+        // Calcular cuántas columnas caben en pantalla
+        // Necesitamos calcular los anchos de columna (replicar lógica de render_result_mode)
+        let col_widths: Vec<usize> = results
+            .columns
+            .iter()
+            .enumerate()
+            .map(|(i, col_name)| {
+                let mut max_width = col_name.len();
+                for row in &results.rows {
+                    if let Some(cell) = row.get(i) {
+                        max_width = max_width.max(cell.len());
+                    }
+                }
+                max_width.min(50) // Limitar ancho máximo
+            })
+            .collect();
+
+        // Calcular el offset máximo para columnas
+        // El offset máximo es aquel desde el cual la última columna aún es visible
+        let available_width = term_size.width.saturating_sub(4); // -4 para borders
+
+        let mut max_offset_x = 0;
+
+        // Buscar el primer offset donde la última columna está visible
+        for offset in 0..results.columns.len() {
+            let mut visible_count = 0;
+            let mut current_width = 0;
+
+            // Contar cuántas columnas caben desde este offset
+            for i in offset..results.columns.len() {
+                let col_width = (col_widths[i] + 3).max(5) as u16; // +3 para " │ "
+                if current_width + col_width <= available_width {
+                    visible_count += 1;
+                    current_width += col_width;
+                } else {
+                    break;
+                }
+            }
+
+            // Si desde este offset alcanzamos la última columna, este es el offset máximo
+            if offset + visible_count >= results.columns.len() {
+                max_offset_x = offset;
+                break;
+            }
+        }
+
+        (max_offset_x, max_offset_y)
     }
 
     /// Manejar teclas en modo Dialog
