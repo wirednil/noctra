@@ -40,6 +40,10 @@ impl RqlParser {
         let lines: Vec<&str> = input.lines().collect();
         ast.metadata.lines_processed = lines.len();
 
+        // Buffer para acumular líneas de un statement multi-línea
+        let mut statement_buffer = String::new();
+        let mut statement_start_line = 0;
+
         // Procesar cada línea
         for (line_num, line) in lines.iter().enumerate() {
             let trimmed_line = line.trim();
@@ -49,16 +53,54 @@ impl RqlParser {
                 continue;
             }
 
-            // Parsear línea individual
-            match self.parse_line(trimmed_line, line_num + 1) {
+            // Si el buffer está vacío, esta es la primera línea del statement
+            if statement_buffer.is_empty() {
+                statement_start_line = line_num + 1;
+            }
+
+            // Agregar línea al buffer (con espacio si no es la primera)
+            if !statement_buffer.is_empty() {
+                statement_buffer.push(' ');
+            }
+            statement_buffer.push_str(trimmed_line);
+
+            // Si la línea termina con punto y coma, procesar el statement completo
+            if trimmed_line.ends_with(';') {
+                // Remover el punto y coma final para procesamiento
+                let statement_text = statement_buffer.trim_end_matches(';').trim();
+
+                // Parsear statement completo
+                match self.parse_line(statement_text, statement_start_line) {
+                    Ok(statement) => {
+                        ast.add_statement(statement);
+                        // Extraer parámetros del statement completo
+                        self.extract_parameters(statement_text, statement_start_line, &mut ast)?;
+                    }
+                    Err(e) => {
+                        return Err(ParserError::syntax_error(
+                            statement_start_line,
+                            1,
+                            format!("Failed to parse line: {}", e),
+                        ));
+                    }
+                }
+
+                // Limpiar buffer para el próximo statement
+                statement_buffer.clear();
+            }
+        }
+
+        // Si queda algo en el buffer (statement sin ';'), procesarlo también
+        if !statement_buffer.is_empty() {
+            let statement_text = statement_buffer.trim();
+            match self.parse_line(statement_text, statement_start_line) {
                 Ok(statement) => {
                     ast.add_statement(statement);
-                    // Extraer parámetros de la línea
-                    self.extract_parameters(trimmed_line, line_num + 1, &mut ast)?;
+                    self.extract_parameters(statement_text, statement_start_line, &mut ast)?;
                 }
                 Err(e) => {
                     return Err(ParserError::syntax_error(
-                        line_num + 1,
+                        statement_start_line,
                         1,
                         format!("Failed to parse line: {}", e),
                     ));
