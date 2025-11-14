@@ -375,7 +375,7 @@ impl NoctraApp {
 
     /// Ejecutar REPL
     async fn run_repl(self, args: ReplArgs) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🐍 Noctra v0.1.0 - Entorno SQL Interactivo");
+        println!("Noctra v0.1.0 - Entorno SQL Interactivo");
         println!("Escribe 'help' para comandos disponibles o 'quit' para salir.");
 
         // Crear e iniciar REPL

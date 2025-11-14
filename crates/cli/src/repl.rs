@@ -81,7 +81,7 @@ impl Repl {
 
     /// Ejecutar REPL
     pub async fn run(&mut self) -> Result<()> {
-        println!("🎯 Noctra REPL iniciado - Escribe 'help' para ayuda");
+        println!("Noctra REPL iniciado - Escribe 'help' para ayuda");
 
         loop {
             // Mostrar prompt
@@ -317,7 +317,7 @@ impl Repl {
             eprintln!("[DEBUG] Active source after registration: {:?}",
                 self.executor.source_registry().active().map(|s| s.name()));
 
-            println!("✅ Fuente '{}' cargada como '{}' (DuckDB)", path, source_name);
+            // Success message removed for cleaner output
         } else {
             println!("❌ Tipo de fuente no soportado: {}", path);
             println!("   (Soportados: .csv, .json, .parquet)");
@@ -333,7 +333,7 @@ impl Repl {
         if sources.is_empty() {
             println!("ℹ️  No hay fuentes registradas");
         } else {
-            println!("📊 Fuentes disponibles:");
+            println!("Fuentes disponibles:");
             for (alias, source_type) in sources {
                 println!("  • {} ({}) - {}", alias, source_type.type_name(), source_type.display_path());
             }
