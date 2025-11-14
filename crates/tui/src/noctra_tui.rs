@@ -422,7 +422,7 @@ impl<'a> NoctraTui<'a> {
 
                 // Formatear con ancho fijo y agregar separador excepto en la última columna
                 let text = if idx < visible_columns.len() - 1 {
-                    format!("{:width$}│", col_name, width = col_width)
+                    format!("{:<width$} │", col_name, width = col_width)
                 } else {
                     col_name.to_string()
                 };
@@ -443,7 +443,7 @@ impl<'a> NoctraTui<'a> {
 
                     // Formatear con ancho fijo y agregar separador excepto en la última columna
                     let text = if idx < visible_columns.len() - 1 {
-                        format!("{:width$}│", cell_text, width = col_width)
+                        format!("{:<width$} │", cell_text, width = col_width)
                     } else {
                         cell_text.to_string()
                     };
