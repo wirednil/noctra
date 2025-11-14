@@ -275,9 +275,11 @@ impl RqlParser {
 
         // Extraer alias (opcional)
         let alias = if upper_line.contains(" AS ") {
-            let parts: Vec<&str> = line.splitn(2, " AS ").collect();
-            if parts.len() == 2 {
-                let alias_part = parts[1].trim();
+            // Find the position of " AS " in the uppercase version
+            if let Some(as_pos) = upper_line.find(" AS ") {
+                // Use the same position in the original line
+                let after_as = &line[as_pos + 4..]; // Skip " AS "
+                let alias_part = after_as.trim();
                 let alias_end = alias_part
                     .find(" OPTIONS")
                     .or_else(|| alias_part.find(';'))
