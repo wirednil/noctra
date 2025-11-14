@@ -415,49 +415,43 @@ impl<'a> NoctraTui<'a> {
                 height: table_height,
             };
 
-            // Crear header con columnas visibles y separadores
-            let header_cells: Vec<Cell> = visible_columns.iter().enumerate().map(|(idx, &i)| {
+            // Crear header como una sola línea de texto con separadores
+            let header_text = visible_columns.iter().enumerate().map(|(idx, &i)| {
                 let col_name = &results.columns[i];
                 let col_width = col_widths[i];
 
-                // Formatear con ancho fijo y agregar separador excepto en la última columna
-                let text = if idx < visible_columns.len() - 1 {
+                if idx < visible_columns.len() - 1 {
                     format!("{:<width$} │", col_name, width = col_width)
                 } else {
-                    col_name.to_string()
-                };
+                    format!("{:<width$}", col_name, width = col_width)
+                }
+            }).collect::<Vec<_>>().join(" ");
 
-                Cell::from(text)
-                    .style(Style::default().add_modifier(Modifier::BOLD))
-            }).collect();
-
-            let header = Row::new(header_cells)
+            let header = Row::new(vec![Cell::from(header_text)
+                    .style(Style::default().add_modifier(Modifier::BOLD))])
                 .style(Style::default().fg(Color::Yellow))
                 .height(1);
 
             // Crear filas visibles con columnas alineadas y separadores
             let rows = visible_rows.iter().map(|row| {
-                let cells: Vec<Cell> = visible_columns.iter().enumerate().map(|(idx, &i)| {
+                let row_text = visible_columns.iter().enumerate().map(|(idx, &i)| {
                     let cell_text = row.get(i).map(|s| s.as_str()).unwrap_or("");
                     let col_width = col_widths[i];
 
-                    // Formatear con ancho fijo y agregar separador excepto en la última columna
-                    let text = if idx < visible_columns.len() - 1 {
+                    if idx < visible_columns.len() - 1 {
                         format!("{:<width$} │", cell_text, width = col_width)
                     } else {
-                        cell_text.to_string()
-                    };
+                        format!("{:<width$}", cell_text, width = col_width)
+                    }
+                }).collect::<Vec<_>>().join(" ");
 
-                    Cell::from(text)
-                }).collect();
-                Row::new(cells).height(1)
+                Row::new(vec![Cell::from(row_text)]).height(1)
             });
 
-            // Constraints para columnas visibles
-            let col_constraints: Vec<Constraint> = visible_widths
-                .iter()
-                .map(|&width| Constraint::Length(width))
-                .collect();
+            // Una sola columna que ocupa todo el ancho de la tabla
+            let total_width: u16 = visible_widths.iter().sum::<u16>()
+                + ((visible_columns.len().saturating_sub(1)) * 2) as u16; // +2 por cada separador (│ + espacio)
+            let col_constraints = vec![Constraint::Length(total_width)];
 
             let table = Table::new(rows, col_constraints)
                 .header(header)
