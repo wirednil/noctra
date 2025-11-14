@@ -297,6 +297,8 @@ impl Repl {
         if path.ends_with(".csv") || path.ends_with(".json") || path.ends_with(".parquet") {
             // Crear fuente DuckDB (reemplaza CsvDataSource)
             let source_name = alias.unwrap_or(path);
+
+            #[cfg(debug_assertions)]
             eprintln!("[DEBUG] Loading DuckDB source: {} as {}", path, source_name);
 
             // Usar DuckDBSource desde noctra-duckdb
@@ -306,6 +308,7 @@ impl Repl {
             duckdb_source.register_file(path, &source_name)
                 .map_err(|e| NoctraError::Internal(format!("Error registering file: {}", e)))?;
 
+            #[cfg(debug_assertions)]
             eprintln!("[DEBUG] DuckDB source created successfully");
 
             // Registrar fuente
@@ -313,9 +316,12 @@ impl Repl {
                 .register(source_name.to_string(), Box::new(duckdb_source))
                 .map_err(|e| NoctraError::Internal(format!("Error registering source: {}", e)))?;
 
-            eprintln!("[DEBUG] DuckDB source registered");
-            eprintln!("[DEBUG] Active source after registration: {:?}",
-                self.executor.source_registry().active().map(|s| s.name()));
+            #[cfg(debug_assertions)]
+            {
+                eprintln!("[DEBUG] DuckDB source registered");
+                eprintln!("[DEBUG] Active source after registration: {:?}",
+                    self.executor.source_registry().active().map(|s| s.name()));
+            }
 
             // Success message removed for cleaner output
         } else {
