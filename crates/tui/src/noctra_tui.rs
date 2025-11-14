@@ -757,6 +757,8 @@ impl<'a> NoctraTui<'a> {
         if path.ends_with(".csv") || path.ends_with(".json") || path.ends_with(".parquet") {
             // Crear fuente DuckDB (reemplaza CsvDataSource)
             let source_name = alias.unwrap_or(path);
+
+            #[cfg(debug_assertions)]
             eprintln!("[DEBUG TUI] Loading DuckDB source: {} as {}", path, source_name);
 
             // Usar DuckDBSource desde noctra-duckdb
@@ -766,6 +768,7 @@ impl<'a> NoctraTui<'a> {
             duckdb_source.register_file(path, &source_name)
                 .map_err(|e| NoctraError::Internal(format!("Error registering file: {}", e)))?;
 
+            #[cfg(debug_assertions)]
             eprintln!("[DEBUG TUI] DuckDB source created successfully");
 
             // Registrar fuente
@@ -773,11 +776,14 @@ impl<'a> NoctraTui<'a> {
                 .register(source_name.to_string(), Box::new(duckdb_source))
                 .map_err(|e| NoctraError::Internal(format!("Error registering source: {}", e)))?;
 
-            eprintln!("[DEBUG TUI] DuckDB source registered");
-            eprintln!("[DEBUG TUI] Active source: {:?}",
-                self.executor.source_registry().active().map(|s| s.name()));
+            #[cfg(debug_assertions)]
+            {
+                eprintln!("[DEBUG TUI] DuckDB source registered");
+                eprintln!("[DEBUG TUI] Active source: {:?}",
+                    self.executor.source_registry().active().map(|s| s.name()));
+            }
 
-            self.show_info_dialog(&format!("✅ Fuente '{}' cargada como '{}' (DuckDB)", path, source_name));
+            // Success - no dialog in release mode
         } else {
             self.show_error_dialog(&format!("❌ Tipo de fuente no soportado: {}\n(Soportados: .csv, .json, .parquet)", path));
         }
